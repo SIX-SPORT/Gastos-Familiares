@@ -195,7 +195,7 @@
   .fac-sum .b{font-size:20px;font-weight:800}.fac-sum .l{font-size:11px;color:var(--muted);margin-top:2px}
   #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;z-index:50}
   .login-card{width:100%;max-width:340px;text-align:center}
-  .login-ic{width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#FF7A33,#E8643C);color:#1A1206;font-weight:900;font-size:36px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+  .login-ic{width:84px;height:84px;border-radius:22px;object-fit:cover;display:block;margin:0 auto 16px}
   #login h1{font-size:22px;font-weight:800;margin-bottom:6px}
   #login p{color:var(--muted);font-size:13.5px;margin-bottom:20px}
   #login input{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);color:var(--ink);margin-bottom:11px;font-size:16px}
@@ -207,7 +207,7 @@
 <body>
 <section id="login">
   <div class="login-card">
-    <div class="login-ic">₡</div>
+    <img src="icon-192.png" alt="Gastos de la Familia" class="login-ic">
     <h1>Gastos de la Familia</h1>
     <p>Inicien sesión para ver y anotar los gastos en tiempo real.</p>
     <input id="loginEmail" type="email" placeholder="Correo" autocomplete="email">
@@ -355,6 +355,7 @@
   </div>
 </div>
 
+<script src="config.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -712,12 +713,13 @@ function renderAll(){ renderHeaderName(); renderPanel(); renderTx(); renderRes()
 
 buildMeta(); fillQuien(); setModalTipo("gasto"); $("fFecha").value=today(); renderAll();
 
-onAuthStateChanged(auth, user=>{
+if(auth){ onAuthStateChanged(auth, user=>{
   if(user){ $("login").classList.add("hidden"); $("appwrap").classList.remove("hidden"); startSync(); }
   else { $("appwrap").classList.add("hidden"); $("login").classList.remove("hidden"); }
-});
+}); }
 async function doLogin(){
   $("loginMsg").textContent="";
+  if(!auth){ $("loginMsg").textContent="Error de configuración (config.js). Avísenle a Oscar."; return; }
   const em=$("loginEmail").value.trim(), pw=$("loginPass").value;
   if(!em||!pw){ $("loginMsg").textContent="Escriban correo y contraseña."; return; }
   try{ await signInWithEmailAndPassword(auth,em,pw); }
