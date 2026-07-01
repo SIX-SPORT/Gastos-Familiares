@@ -40,6 +40,9 @@
   .periods{display:flex;justify-content:center;gap:6px;margin:12px 0 4px;flex-wrap:wrap;padding:0 8px}
   .periods button{font-size:12.5px;font-weight:700;color:var(--muted);padding:6px 13px;border-radius:999px;background:var(--surface)}
   .periods button.on{background:var(--accent);color:#1A1206}
+  .people{display:flex;justify-content:center;gap:6px;margin:6px 0 2px;flex-wrap:wrap;padding:0 8px}
+  .people button{font-size:12px;font-weight:700;color:var(--muted);padding:5px 12px;border-radius:999px;background:var(--surface)}
+  .people button.on{background:var(--surface2);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--accent)}
 
   main{padding:8px 14px}
 
@@ -49,6 +52,8 @@
   .donut .hole{position:absolute;inset:36px;background:var(--bg);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
   .donut .hole .t1{font-size:12px;color:var(--muted);font-weight:600}
   .donut .hole .v{font-size:25px;font-weight:900;letter-spacing:-.01em;margin-top:2px}
+  .donut .hole .t2{font-size:12.5px;font-weight:800;margin-top:5px}
+  .donut .hole .t2 span{color:var(--muted);font-weight:600}
   .donut .dico{position:absolute;width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;transform:translate(-50%,-50%);box-shadow:0 0 0 2px var(--bg)}
 
   .cat-title{font-size:17px;font-weight:800;margin:6px 4px 10px}
@@ -114,6 +119,7 @@
   .pprow{margin-bottom:11px}
   .pprow .top{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:5px}
   .pprow .nm{font-weight:600}.pprow .am{font-weight:800}
+  .pprow .ppc{color:var(--muted);font-weight:700;font-size:12px}
   .pprow .track{height:8px;background:var(--surface2);border-radius:8px;overflow:hidden}
   .pprow .fill{height:100%;border-radius:8px;background:#2DBE9B}
   .delta{font-size:11px;font-weight:800;padding:1px 6px;border-radius:999px}
@@ -234,10 +240,11 @@
         <button data-p="anio">Año</button>
         <button data-p="total">Total</button>
       </div>
+      <div class="people" id="people"></div>
       <div class="donut-wrap">
         <div class="donut" id="donut">
           <div class="ring" id="ring"></div>
-          <div class="hole"><span class="t1" id="donutLbl">Este mes</span><span class="v num" id="donutTotal">₡0</span></div>
+          <div class="hole"><span class="t1" id="donutLbl">Este mes</span><span class="v num" id="donutTotal">₡0</span><span class="t2 num" id="donutSub"></span></div>
         </div>
       </div>
       <div class="cat-title" id="catTitle">Gastos por categoría</div>
@@ -391,7 +398,7 @@ const PERIOD_LABEL={dia:"Hoy",semana:"Esta semana",mes:"Este mes",anio:"Este añ
 function defList(arr){ return arr.map(([nombre,icono,color])=>({nombre,icono,color})); }
 let cfg = { hogar:"Nuestro hogar", gastos:defList(CAT_GASTO), ingresos:defList(CAT_ING), ahorros:defList(CAT_AHO), personas:["Mamá","Papá","Hijo"] };
 let tx = [];
-let state = { tab:"gasto", period:"mes", modalTipo:"gasto", soloPend:false, editId:null };
+let state = { tab:"gasto", period:"mes", persona:"", modalTipo:"gasto", soloPend:false, editId:null };
 let meta = {}; let newCatEmojiVal = ICON_FALLBACK;
 let pendingPhoto=null, pendingVerif=false, curMov=null, removeFoto=false, delArmed=false;
 
@@ -581,7 +588,13 @@ window.addItem=async key=>{ cfg[key].push({nombre:"Nueva categoría",icono:ICON_
 window.editPersona=async(i,value)=>{ value=value.trim(); if(!value){renderSettings();return;} const old=cfg.personas[i]; cfg.personas[i]=value; tx.forEach(t=>{if(t.quien===old)t.quien=value;}); await saveCfg(); await saveTx(); fillQuien(); renderSettings(); renderAll(); };
 window.delPersona=async i=>{ if(cfg.personas.length<=1){return;} cfg.personas.splice(i,1); await saveCfg(); fillQuien(); renderSettings(); renderAll(); };
 window.addPersona=async()=>{ cfg.personas.push("Nueva persona"); await saveCfg(); fillQuien(); renderSettings(); };
-function fillQuien(){ $("fQuien").innerHTML=cfg.personas.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join(""); }
+function fillQuien(){ $("fQuien").innerHTML=cfg.personas.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join(""); fillPeople(); }
+function fillPeople(){
+  if(state.persona && state.persona!=="" && !cfg.personas.includes(state.persona)) state.persona="";
+  const chips=[["","Todos"],...cfg.personas.map(p=>[p,p])];
+  $("people").innerHTML=chips.map(([v,l])=>`<button data-q="${esc(v)}" class="${v===state.persona?'on':''}">${esc(l)}</button>`).join("");
+  $("people").querySelectorAll("button").forEach(b=>b.onclick=()=>{ state.persona=b.dataset.q; fillPeople(); renderPanel(); });
+}
 function renderHeaderName(){ $("hogarLabel").textContent=cfg.hogar||""; }
 
 // ---- PANEL (dona + tabla) ----
@@ -608,18 +621,32 @@ function renderPanel(){
   const tipo=state.tab;
   $("donutLbl").textContent=PERIOD_LABEL[state.period];
   $("catTitle").textContent=TIPO_TITLE[tipo];
-  const set=periodSet().filter(t=>t.tipo===tipo);
+  const base=periodSet().filter(t=>t.tipo===tipo);
+  const set=state.persona?base.filter(t=>t.quien===state.persona):base;
   const total=set.reduce((s,t)=>s+t.monto,0);
   const por={}; set.forEach(t=>por[t.categoria]=(por[t.categoria]||0)+t.monto);
   const entries=Object.entries(por).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   $("donutTotal").textContent=money(total); $("donutTotal").style.color=tipo==="gasto"?"#FF5A5A":tipo==="ingreso"?"#27D17F":"#3B82F6";
+  if(state.persona){
+    const famTotal=base.reduce((s,t)=>s+t.monto,0);
+    const pc=famTotal?Math.round(total/famTotal*100):0;
+    $("donutSub").innerHTML=`${pc}% <span>del total</span>`;
+    $("donutSub").style.color="var(--ink)";
+  } else {
+    const per=periodSet();
+    const ingP=per.filter(t=>t.tipo==="ingreso").reduce((s,t)=>s+t.monto,0);
+    const gasP=per.filter(t=>t.tipo==="gasto").reduce((s,t)=>s+t.monto,0);
+    const disp=ingP-gasP;
+    $("donutSub").innerHTML=`<span>Disponible</span> ${money(disp)}`;
+    $("donutSub").style.color=disp>=0?"#27D17F":"#FF5A5A";
+  }
   setRingAndIcons(entries,total,listOf(tipo));
   $("catTable").innerHTML = entries.length? entries.map(([n,v])=>{
     const pc=total?Math.round(v/total*100):0;
     return `<button class="ctrow" onclick="openDetail(this.dataset.cat,'${tipo}')" data-cat="${esc(n)}">
       <span class="left"><span class="dot" style="background:${colOf(n)}"></span><span class="nm">${esc(n)}</span></span>
       <span class="pc num">${pc}</span><span class="mo num">${money(v)}</span></button>`;
-  }).join("") : `<div class="ctempty">Sin ${TIPO_LABEL[tipo]} en ${PERIOD_LABEL[state.period].toLowerCase()}.<br>Toque ＋ para agregar.</div>`;
+  }).join("") : `<div class="ctempty">${state.persona?esc(state.persona)+" no tiene ":"Sin "}${TIPO_LABEL[tipo]} en ${PERIOD_LABEL[state.period].toLowerCase()}.<br>Toque ＋ para agregar.</div>`;
 }
 let centerColor="";
 
@@ -706,8 +733,8 @@ function renderRes(){
   $("bars").innerHTML=bars; $("ax1").textContent="1"; $("ax2").textContent=Math.round(days/2); $("ax3").textContent=days;
   // por persona
   const por={}; cfg.personas.forEach(p=>por[p]=0); dm.filter(t=>t.tipo==="gasto").forEach(t=>por[t.quien]=(por[t.quien]||0)+t.monto);
-  const e=Object.entries(por).sort((a,b)=>b[1]-a[1]); const pmax=Math.max(1,...e.map(x=>x[1]));
-  $("ppBody").innerHTML=e.map(([n,v])=>`<div class="pprow"><div class="top"><span class="nm">${esc(n)}</span><span class="am num">${money(v)}</span></div><div class="track"><div class="fill" style="width:${Math.round(v/pmax*100)}%"></div></div></div>`).join("");
+  const e=Object.entries(por).sort((a,b)=>b[1]-a[1]); const pmax=Math.max(1,...e.map(x=>x[1])); const totPP=e.reduce((s,x)=>s+x[1],0);
+  $("ppBody").innerHTML=e.map(([n,v])=>{const pc=totPP?Math.round(v/totPP*100):0;return `<div class="pprow"><div class="top"><span class="nm">${esc(n)}</span><span class="am num">${money(v)} <span class="ppc">${pc}%</span></span></div><div class="track"><div class="fill" style="width:${Math.round(v/pmax*100)}%"></div></div></div>`;}).join("");
 }
 
 function renderAll(){ renderHeaderName(); renderPanel(); renderTx(); renderRes(); }
