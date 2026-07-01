@@ -423,7 +423,8 @@ function startSync(){
 }
 
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const today=()=>new Date().toISOString().slice(0,10);
+const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const today=()=>ymd(new Date());
 const mesDe=f=>(f||"").slice(0,7);
 const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
 function mesLargo(ym){const[y,m]=ym.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString('es-CR',{month:'long',year:'numeric'});}
@@ -433,7 +434,7 @@ function fechaCorta(f){const[y,m,d]=f.split("-").map(Number);return d+" "+cap(me
 function prevMes(ym){let[y,m]=ym.split("-").map(Number);m--;if(m<1){m=12;y--;}return `${y}-${String(m).padStart(2,"0")}`;}
 function monthsBack(n,ym){const arr=[];let[y,m]=ym.split("-").map(Number);for(let k=n-1;k>=0;k--){let yy=y,mm=m-k;while(mm<1){mm+=12;yy--;}arr.push(`${yy}-${String(mm).padStart(2,"0")}`);}return arr;}
 
-function weekRange(){ const d=new Date(today()+"T00:00:00"); const dow=(d.getDay()+6)%7; const mon=new Date(d); mon.setDate(d.getDate()-dow); const sun=new Date(mon); sun.setDate(mon.getDate()+6); const iso=x=>x.toISOString().slice(0,10); return [iso(mon),iso(sun)]; }
+function weekRange(){ const d=new Date(today()+"T00:00:00"); const dow=(d.getDay()+6)%7; const mon=new Date(d); mon.setDate(d.getDate()-dow); const sun=new Date(mon); sun.setDate(mon.getDate()+6); return [ymd(mon),ymd(sun)]; }
 function inPeriod(f){ const now=today();
   if(state.period==="total") return true;
   if(state.period==="dia") return f===now;
