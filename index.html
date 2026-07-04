@@ -83,6 +83,10 @@
   .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
   .chips button{font-size:12px;color:var(--soft);background:rgba(255,255,255,.05);padding:5px 12px;border-radius:999px;font-weight:600}
   .chips button.on{background:var(--accbg);color:#e9e5f5;border:1px solid var(--accbd)}
+  .mnav-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:13px}
+  .mnav-row button{font-size:15px;color:var(--soft);background:rgba(255,255,255,.06);min-width:32px;height:32px;padding:0 6px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .mnav-row #mCur{font-size:13px;color:#fff;padding:0 14px}
+  .mnav-row #mReset{color:var(--acc-ink);background:var(--accent);font-weight:700;font-size:12px;padding:0 13px}
   .only-mobile{display:none}
   .perbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--cardb);border-radius:12px;padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:#e9e5f5;margin-bottom:9px}
   .perbar .cur{color:var(--dim);font-weight:400;font-size:12px}
@@ -330,6 +334,13 @@ const today = () => ymd(new Date());
 function weekRange(){ const d=new Date(today()+"T00:00:00"); const dow=(d.getDay()+6)%7; const mon=new Date(d); mon.setDate(d.getDate()-dow); const sun=new Date(mon); sun.setDate(mon.getDate()+6); return [ymd(mon),ymd(sun)]; }
 const MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const MESL=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DIAS=["dom","lun","mar","mié","jue","vie","sáb"];
+function hoyTxt(){ const d=new Date(); return DIAS[d.getDay()]+" "+d.getDate()+" "+MES[d.getMonth()]+" "+d.getFullYear(); }
+function mesRefY(){ return +state.mesRef.slice(0,4); }
+function mesRefM(){ return +state.mesRef.slice(5,7)-1; }
+function mesRefLabel(){ return MESL[mesRefM()]+" "+mesRefY(); }
+function esMesActual(){ const d=new Date(); return state.mesRef===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")); }
+function shiftMes(delta){ const dt=new Date(mesRefY(),mesRefM()+delta,1); state.mesRef=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0"); }
 function fechaLarga(f){ const [y,m,d]=f.split("-"); return d+" "+MES[+m-1]+" "+y; }
 function lastDayOfMonth(y,m){ return new Date(y,m+1,0).getDate(); } // m 0-based
 
@@ -370,7 +381,7 @@ function migrateCfg(pais,raw){
 }
 
 /* ---------- estado ---------- */
-let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", persona:"", verUSD:false, editId:null };
+let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), editId:null };
 let perOpen=false;
 let tx=[], cfg=defaultCfg("CR");
 
@@ -410,16 +421,15 @@ function inPeriod(f){
   const now=today();
   if(state.period==="dia") return f===now;
   if(state.period==="semana"){ const [a,b]=weekRange(); return f>=a&&f<=b; }
-  if(state.period==="mes") return f.slice(0,7)===now.slice(0,7);
-  if(state.period==="anio") return f.slice(0,4)===now.slice(0,4);
+  if(state.period==="mes") return f.slice(0,7)===state.mesRef;
+  if(state.period==="anio") return f.slice(0,4)===state.mesRef.slice(0,4);
   return true;
 }
 function periodSet(){ return tx.filter(t=>inPeriod(t.fecha)); }
 function endOfPeriod(){
-  const d=new Date(); const y=d.getFullYear(),m=d.getMonth();
   if(state.period==="total") return "9999-12-31";
-  if(state.period==="anio") return y+"-12-31";
-  if(state.period==="mes") return ymd(new Date(y,m,lastDayOfMonth(y,m)));
+  if(state.period==="anio") return mesRefY()+"-12-31";
+  if(state.period==="mes"){ const y=mesRefY(),m=mesRefM(); return ymd(new Date(y,m,lastDayOfMonth(y,m))); }
   if(state.period==="semana") return weekRange()[1];
   return today();
 }
@@ -457,16 +467,16 @@ function switchCountry(c){ if(c===state.pais)return; state.pais=c; state.persona
 
 /* ============================ PANEL ============================ */
 function periodLabel(){ return {dia:"Hoy",semana:"Esta semana",mes:"Este mes",anio:"Este año",total:"Total"}[state.period]; }
-function monthTitle(){ const d=new Date(); return state.period==="mes"?MESL[d.getMonth()]+" "+d.getFullYear():periodLabel(); }
+function monthTitle(){ return state.period==="mes"?mesRefLabel():state.period==="anio"?("Año "+mesRefY()):periodLabel(); }
 
 function renderPanel(){
   const per=periodSet();
   const ing=sumType(per,"ingreso"), gas=sumType(per,"gasto"), aho=sumType(per,"ahorro");
-  const disp=dispAcum(today());
-  // arrastre = acumulado hasta fin del mes anterior
-  const d=new Date(); const prevEnd=ymd(new Date(d.getFullYear(),d.getMonth(),0));
+  const disp=dispAcum(endOfPeriod());
+  // arrastre = acumulado hasta fin del mes anterior al mes visto
+  const prevEnd=ymd(new Date(mesRefY(),mesRefM(),0));
   const arr=dispAcum(prevEnd);
-  const noVer=tx.filter(t=>t.tipo==="gasto"&&!t.verificado&&t.fecha.slice(0,7)===today().slice(0,7)).length;
+  const noVer=tx.filter(t=>t.tipo==="gasto"&&!t.verificado&&t.fecha.slice(0,7)===state.mesRef).length;
 
   // gastos por categoría (según persona filtro)
   const base=per.filter(t=>t.tipo==="gasto");
@@ -479,8 +489,9 @@ function renderPanel(){
   const usdToggle = CUR[state.pais].usd ? `<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>` : "";
   const rateNote = (state.verUSD&&CUR[state.pais].usd)?` · 1 USD = ${CUR[state.pais].sym}${rate()}`:"";
 
-  let h=`<div class="mtop"><div><h2>${esc(monthTitle())}</h2><div class="sub">Disponible ${money(disp)}${noVer?` · <span class="warn">${noVer} sin verificar</span>`:""}<span class="sub">${rateNote}</span></div></div>
-    <div class="toolr mtophide">${usdToggle}<span class="pill">📅 ${esc(periodLabel())}</span></div></div>`;
+  let h=`<div class="mtop"><div><h2>${esc(monthTitle())}</h2><div class="sub">Hoy ${hoyTxt()} · Disponible ${money(disp)}${noVer?` · <span class="warn">${noVer} sin verificar</span>`:""}${rateNote}</div></div>
+    <div class="toolr mtophide">${usdToggle}</div></div>`;
+  h+=`<div class="mnav-row"><button id="mPrev" aria-label="Mes anterior">‹</button><button id="mCur">📅 ${esc(mesRefLabel())}${esMesActual()?"":" ·"}</button><button id="mNext" aria-label="Mes siguiente">›</button>${esMesActual()?"":'<button id="mReset">Hoy</button>'}</div>`;
 
   // periodo + personas (chips) para móvil/escritorio
   h+=`<div class="periods" id="perBtns">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.period===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+usdToggleMobile()+`</div>`;
@@ -535,6 +546,11 @@ function renderPanel(){
   $("viewPanel").innerHTML=h;
   // wire
   $("perBtns").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.period=b.dataset.p;renderPanel();buildSidebar();});
+  const goMes=fn=>{ fn(); state.period="mes"; renderPanel(); buildSidebar(); };
+  if($("mPrev"))$("mPrev").onclick=()=>goMes(()=>shiftMes(-1));
+  if($("mNext"))$("mNext").onclick=()=>goMes(()=>shiftMes(1));
+  if($("mCur"))$("mCur").onclick=()=>goMes(()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); });
+  if($("mReset"))$("mReset").onclick=()=>goMes(()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); });
   if($("ppBar"))$("ppBar").onclick=()=>{perOpen=!perOpen;renderPanel();};
   if($("ppChips"))$("ppChips").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.persona=b.dataset.p;renderPanel();buildSidebar();});
   wireCurToggle();
@@ -611,10 +627,10 @@ function renderMov(){
 
 /* ============================ RESUMEN ============================ */
 function renderRes(){
-  const now=today(); const per=tx.filter(t=>t.fecha.slice(0,7)===now.slice(0,7));
+  const per=tx.filter(t=>t.fecha.slice(0,7)===state.mesRef);
   const ing=sumType(per,"ingreso"),gas=sumType(per,"gasto"),aho=sumType(per,"ahorro");
-  const disp=dispAcum(today());
-  let h=`<div class="mtop"><div><h2>Resumen</h2><div class="sub">${MESL[new Date().getMonth()]} ${new Date().getFullYear()}</div></div><div class="toolr mtophide">${CUR[state.pais].usd?`<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>`:""}</div></div>`;
+  const savedP=state.period; state.period="mes"; const disp=dispAcum(endOfPeriod()); state.period=savedP;
+  let h=`<div class="mtop"><div><h2>Resumen</h2><div class="sub">${mesRefLabel()}</div></div><div class="toolr mtophide">${CUR[state.pais].usd?`<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>`:""}</div></div>`;
   h+=`<div class="grid cards4" style="margin-bottom:12px">
     <div class="mc"><div class="l">Ingresos</div><div class="v num" style="color:var(--green)">${money(ing)}</div></div>
     <div class="mc"><div class="l">Gastos</div><div class="v num" style="color:var(--red)">${money(gas)}</div></div>
@@ -630,7 +646,7 @@ function renderRes(){
   // por persona (mes)
   const gp=per.filter(t=>t.tipo==="gasto"); const tot=sum(gp); const by={}; gp.forEach(t=>by[t.quien]=(by[t.quien]||0)+(+t.monto||0));
   const e=cfg.personas.map(p=>[p,by[p]||0]).sort((a,b)=>b[1]-a[1]);
-  h+=`<div class="grid col-2"><div class="card"><div class="t">Gasto por persona (este mes)</div>`+e.map((x,i)=>{const pct=tot?Math.round(x[1]/tot*100):0;return `<div class="prow"><div class="top"><span class="nm">${esc(x[0])}</span><span class="am">${money(x[1])} <span style="color:var(--dim);font-weight:400">${pct}%</span></span></div><div class="track"><i style="width:${pct}%;background:${PAL[i%PAL.length]}"></i></div></div>`;}).join("")+`</div>`;
+  h+=`<div class="grid col-2"><div class="card"><div class="t">Gasto por persona (${mesRefLabel()})</div>`+e.map((x,i)=>{const pct=tot?Math.round(x[1]/tot*100):0;return `<div class="prow"><div class="top"><span class="nm">${esc(x[0])}</span><span class="am">${money(x[1])} <span style="color:var(--dim);font-weight:400">${pct}%</span></span></div><div class="track"><i style="width:${pct}%;background:${PAL[i%PAL.length]}"></i></div></div>`;}).join("")+`</div>`;
   h+=metaCard()+`</div>`;
   $("viewRes").innerHTML=h; wireCurToggle();
 }
