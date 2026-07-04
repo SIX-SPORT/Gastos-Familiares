@@ -401,6 +401,8 @@ const usdFmt=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maxi
 function rate(){ return (cfg.tc&&cfg.tc>0)?cfg.tc:1; }
 function money(v){ v=v||0; if(state.verUSD && CUR[state.pais].usd){ const neg=v<0; return (neg?"-":"")+usdFmt.format(Math.round(Math.abs(v)/rate())); }
   const c=CUR[state.pais]; const r=c.dec?Math.round(v*100)/100:Math.round(v); return fmtLocal().format(r); }
+function shortMoney(v){ v=v||0; let sym,a; if(state.verUSD&&CUR[state.pais].usd){ sym="$"; a=Math.round(Math.abs(v)/rate()); } else { sym=CUR[state.pais].sym; a=Math.abs(Math.round(v)); }
+  const neg=v<0?"-":""; if(a>=1000){ const k=a/1000; return neg+sym+(a>=10000?Math.round(k):(Math.round(k*10)/10)).toString().replace(".",",")+"k"; } return neg+sym+a; }
 
 /* ---------- filtros ---------- */
 function inPeriod(f){
@@ -437,7 +439,7 @@ function buildSidebar(){
   $("mbFlag").className="flag fl-"+state.pais;
   $("sbCty").textContent=CUR[state.pais].name;
   $("mbCty").textContent=CUR[state.pais].name;
-  $("sbDisp").textContent=money(dispAcum(endOfPeriod()));
+  $("sbDisp").textContent=money(dispAcum(today()));
   // personas
   const per=[["","Todos"],...cfg.personas.map(p=>[p,p])];
   $("perList").innerHTML=per.map(([v,l])=>`<span class="it${v===state.persona?' on':''}" data-p="${esc(v)}">${esc(l)}</span>`).join("");
@@ -460,7 +462,7 @@ function monthTitle(){ const d=new Date(); return state.period==="mes"?MESL[d.ge
 function renderPanel(){
   const per=periodSet();
   const ing=sumType(per,"ingreso"), gas=sumType(per,"gasto"), aho=sumType(per,"ahorro");
-  const disp=dispAcum(endOfPeriod());
+  const disp=dispAcum(today());
   // arrastre = acumulado hasta fin del mes anterior
   const d=new Date(); const prevEnd=ymd(new Date(d.getFullYear(),d.getMonth(),0));
   const arr=dispAcum(prevEnd);
@@ -489,7 +491,7 @@ function renderPanel(){
     <div class="mc"><div class="l">Ingresos</div><div class="v num">${money(ing)}</div><div class="s"><span class="dot" style="background:var(--green)"></span> del periodo</div></div>
     <div class="mc"><div class="l">Gastos</div><div class="v num">${money(gas)}</div><div class="s"><span class="dot" style="background:var(--red)"></span> del periodo</div></div>
     <div class="mc"><div class="l">Ahorros</div><div class="v num">${money(aho)}</div><div class="s"><span class="dot" style="background:var(--blue)"></span> aparte</div></div>
-    <div class="mc acc"><div class="l">Disponible</div><div class="v num">${money(disp)}</div><div class="s" style="color:#c9b8ff">${arr?("incluye "+money(arr)+" del mes pasado"):"acumulado"}</div></div>
+    <div class="mc acc"><div class="l">Disponible</div><div class="v num">${money(disp)}</div><div class="s" style="color:#c9b8ff">${arr?("incluye "+money(arr)+" del mes pasado"):"dinero que queda"}</div></div>
   </div>`;
 
   // gastos card (a lo ancho; la meta pasó a Resumen)
@@ -497,7 +499,10 @@ function renderPanel(){
   h+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px"><span style="color:#fff;font-size:14px;font-weight:700">Gastos ${esc(state.period==="mes"?MESL[new Date().getMonth()].toLowerCase():periodLabel().toLowerCase())}</span><span style="color:var(--dim);font-size:11px">${cats.length} categoría${cats.length===1?"":"s"}</span></div>
     <div style="color:var(--muted);font-size:12px;margin-bottom:11px">Total <span style="color:#fff;font-weight:700">${money(totGas)}</span>${cats.length?` · ${topPct}% en ${esc(topName.toLowerCase())}`:""}</div>`;
   if(cats.length){
-    h+=`<div class="subcards">`+cats.slice(0,4).map(([n,v])=>`<div class="subc"><div class="l"><span class="dot" style="background:${catColor(n)}"></span> ${esc(n.length>10?n.slice(0,9)+"…":n)}</div><div class="v num">${money(v)}</div></div>`).join("")+`</div>`;
+    const C=326.7256; let acc=0;
+    const arcs=cats.map(([n,v])=>{ const frac=v/totGas; const dash=frac*C; const rot=-90+acc*360; acc+=frac; return `<circle cx="70" cy="70" r="52" fill="none" stroke="${catColor(n)}" stroke-width="16" stroke-dasharray="${dash.toFixed(1)} ${(C-dash).toFixed(1)}" transform="rotate(${rot.toFixed(1)} 70 70)"/>`; }).join("");
+    h+=`<div class="donutbox"><div style="position:relative;width:120px;height:120px;flex:none"><svg viewBox="0 0 140 140" width="120" height="120"><circle cx="70" cy="70" r="52" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="16"/>${arcs}</svg><div class="hole"><span class="hl">Total</span><span class="hv num">${shortMoney(totGas)}</span></div></div>
+      <div class="catlist">`+cats.slice(0,5).map(([n,v])=>`<div class="catrow"><span class="nm"><span class="dot" style="background:${catColor(n)}"></span> ${esc(n)}</span><span class="am num">${money(v)}</span></div>`).join("")+`</div></div>`;
   } else { h+=`<div class="empty">Sin gastos en ${esc(periodLabel().toLowerCase())}.</div>`; }
   // presupuesto
   if(cfg.presupuesto>0){
@@ -523,11 +528,9 @@ function renderPanel(){
   h+=atencionCard(noVer,gas);
   h+=`</div>`;
 
-  // por persona + recientes
-  h+=`<div class="grid col-2">`;
+  // movimientos recientes, y por persona al final
+  h+=`<div style="margin-bottom:11px">`+recientesCard()+`</div>`;
   h+=personaCard(base);
-  h+=recientesCard();
-  h+=`</div>`;
 
   $("viewPanel").innerHTML=h;
   // wire
@@ -610,7 +613,7 @@ function renderMov(){
 function renderRes(){
   const now=today(); const per=tx.filter(t=>t.fecha.slice(0,7)===now.slice(0,7));
   const ing=sumType(per,"ingreso"),gas=sumType(per,"gasto"),aho=sumType(per,"ahorro");
-  const disp=dispAcum(endOfPeriod());
+  const disp=dispAcum(today());
   let h=`<div class="mtop"><div><h2>Resumen</h2><div class="sub">${MESL[new Date().getMonth()]} ${new Date().getFullYear()}</div></div><div class="toolr mtophide">${CUR[state.pais].usd?`<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>`:""}</div></div>`;
   h+=`<div class="grid cards4" style="margin-bottom:12px">
     <div class="mc"><div class="l">Ingresos</div><div class="v num" style="color:var(--green)">${money(ing)}</div></div>
