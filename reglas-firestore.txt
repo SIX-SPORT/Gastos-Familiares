@@ -1,0 +1,11 @@
+// REGLAS DE FIRESTORE (versión con 3 países)
+// Firebase -> Firestore Database -> pestaña "Reglas" -> borre lo que haya -> pegue TODO esto -> Publicar.
+// Solo las cuentas que iniciaron sesión (las que ustedes crearon) pueden leer/escribir.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /hogar/{doc}     { allow read, write: if request.auth != null; }   // Costa Rica
+    match /hogar_ni/{doc}  { allow read, write: if request.auth != null; }   // Nicaragua
+    match /hogar_es/{doc}  { allow read, write: if request.auth != null; }   // España
+  }
+}
