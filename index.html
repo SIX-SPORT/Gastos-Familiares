@@ -21,7 +21,8 @@
   body{font-family:var(--body);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.4;
     background:radial-gradient(120% 55% at 18% -6%, #3c2a75 0%, #201736 40%, #140f1e 100%) fixed;}
   .num{font-variant-numeric:tabular-nums}
-  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;touch-action:manipulation}
+  a,.cty,.it,[onclick]{touch-action:manipulation}
   input,select,textarea{font-family:inherit;font-size:16px}
   .hidden{display:none !important}
   ::-webkit-scrollbar{width:0}
@@ -190,18 +191,18 @@
   @media (max-width:860px){
     .only-mobile{display:block}
     .side{display:none}
-    .main{padding:12px 13px 90px}
+    .main{padding:12px 13px calc(96px + env(safe-area-inset-bottom))}
     .mtophide{display:none}
     .cards4{grid-template-columns:1fr 1fr}
     .cards3{grid-template-columns:1fr 1fr 1fr}
     .col-a,.col-2{grid-template-columns:1fr}
     .subcards{grid-template-columns:1fr 1fr}
     .mbar{display:flex !important}
-    .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;background:#15111f;border-top:1px solid #2b2544;padding:8px 6px 10px;justify-content:space-around;z-index:40}
+    .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;background:#15111f;border-top:1px solid #2b2544;padding:8px 6px calc(10px + env(safe-area-inset-bottom));justify-content:space-around;z-index:40}
     .bnav a{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:10.5px;font-weight:600}
     .bnav a.on{color:var(--accent)}
     .bnav a .ic{font-size:19px}
-    .fab{bottom:74px}
+    .fab{bottom:calc(80px + env(safe-area-inset-bottom))}
   }
   .mbar{display:none;flex-direction:column;gap:9px;margin-bottom:12px}
   .mbar .mbar-top{display:flex;align-items:center;justify-content:space-between}
@@ -209,7 +210,7 @@
   .mbar .l .nm{font-size:15px;font-weight:800}
   .mbar .salir{color:var(--muted);font-size:12px;font-weight:600}
   .paises-mini{display:flex;gap:6px;flex-wrap:wrap}
-  .paises-mini button{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);background:rgba(255,255,255,.05);padding:6px 11px;border-radius:999px;border:1px solid transparent;font-weight:600}
+  .paises-mini button{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);background:rgba(255,255,255,.05);padding:9px 14px;border-radius:999px;border:1px solid transparent;font-weight:600}
   .paises-mini button.on{background:var(--accbg);color:#e9e5f5;border-color:var(--accbd)}
   .paises-mini .flag{width:17px;height:12px}
 </style>
@@ -217,7 +218,12 @@
 <body>
 
 <!-- LOGIN -->
-<div id="login">
+<div id="splash" style="min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+  <img src="icon-192.png" alt="" style="width:88px;height:88px;border-radius:22px;">
+  <div style="color:var(--muted);font-size:13px;">Cargando…</div>
+</div>
+
+<div id="login" class="hidden">
   <img src="icon-192.png" alt="">
   <h1>Gastos de la Familia</h1>
   <p>Entre con su correo y contraseña</p>
@@ -445,7 +451,7 @@ function buildSidebar(){
   fillModalSelects();
 }
 
-function switchCountry(c){ if(c===state.pais)return; state.pais=c; state.persona=""; state.verUSD=false; startSync(); }
+function switchCountry(c){ if(c===state.pais)return; state.pais=c; state.persona=""; state.verUSD=false; perOpen=false; tx=[]; cfg=defaultCfg(c); buildSidebar(); renderAll(); startSync(); }
 
 /* ============================ PANEL ============================ */
 function periodLabel(){ return {dia:"Hoy",semana:"Esta semana",mes:"Este mes",anio:"Este año",total:"Total"}[state.period]; }
@@ -712,10 +718,11 @@ $("btnSalir").onclick=()=>signOut(auth); $("mbSalir").onclick=()=>signOut(auth);
 /* ============================ LOGIN ============================ */
 if(auth){
   onAuthStateChanged(auth,user=>{
+    $("splash").classList.add("hidden");
     if(user){ $("login").classList.add("hidden"); $("app").classList.remove("hidden"); startSync(); }
     else { $("app").classList.add("hidden"); $("login").classList.remove("hidden"); }
   });
-} else { $("loginErr").textContent="No se pudo conectar a Firebase. Revise config.js"; }
+} else { $("splash").classList.add("hidden"); $("login").classList.remove("hidden"); $("loginErr").textContent="No se pudo conectar a Firebase. Revise config.js"; }
 async function doLogin(){
   const em=$("email").value.trim(), pw=$("pass").value; $("loginErr").textContent="";
   if(!em||!pw){ $("loginErr").textContent="Escriba correo y contraseña."; return; }
