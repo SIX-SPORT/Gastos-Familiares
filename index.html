@@ -87,6 +87,10 @@
   .mnav-row button{font-size:15px;color:var(--soft);background:rgba(255,255,255,.06);min-width:32px;height:32px;padding:0 6px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:700}
   .mnav-row #mCur{font-size:13px;color:#fff;padding:0 14px}
   .mnav-row #mReset{color:var(--acc-ink);background:var(--accent);font-weight:700;font-size:12px;padding:0 13px}
+  .balbar .bl{color:var(--muted);font-size:12px;margin-bottom:3px}
+  .balbar .bv{font-size:22px;font-weight:800}
+  .balrow{display:flex;height:22px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.06)}
+  .balrow>div{height:22px;transition:width .3s}
   .only-mobile{display:none}
   .perbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--cardb);border-radius:12px;padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:#e9e5f5;margin-bottom:9px}
   .perbar .cur{color:var(--dim);font-weight:400;font-size:12px}
@@ -241,6 +245,7 @@
 
 <!-- APP -->
 <div id="app" class="hidden">
+  <div id="ptr" style="position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:55;transform:translateY(-46px);transition:transform .15s"><div id="ptrPill" style="background:#1a1428;border:1px solid #2b2544;border-radius:999px;padding:7px 15px;margin-top:8px;color:#c9b8ff;font-size:13px;font-weight:600">↓ Jale para actualizar</div></div>
   <div class="shell">
 
     <!-- SIDEBAR -->
@@ -272,7 +277,10 @@
       <div class="mbar mbar-holder">
         <div class="mbar-top">
           <div class="l"><span class="flag" id="mbFlag"></span><span class="nm" id="mbCty">Costa Rica</span></div>
-          <span class="salir" id="mbSalir">Salir</span>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span id="btnRefresh" style="color:#c9b8ff;font-size:19px;line-height:1">↻</span>
+            <span class="salir" id="mbSalir">Salir</span>
+          </div>
         </div>
         <div class="paises-mini" id="mbPaises"></div>
       </div>
@@ -496,6 +504,24 @@ function renderPanel(){
   // periodo + personas (chips) para móvil/escritorio
   h+=`<div class="periods" id="perBtns">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.period===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+usdToggleMobile()+`</div>`;
   h+=perBlock("pp");
+
+  // barra de balance: total acumulado (entró vs gastado vs queda)
+  const totIng=sum(tx.filter(t=>t.tipo==="ingreso"));
+  const totGasAll=sum(tx.filter(t=>t.tipo==="gasto"));
+  const queda=totIng-totGasAll;
+  if(totIng>0||totGasAll>0){
+    const pg=totIng>0?Math.min(100,Math.round(totGasAll/totIng*100)):100;
+    const pq=Math.max(0,100-pg);
+    h+=`<div class="card balbar" style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:11px;flex-wrap:wrap">
+        <div><div class="bl">Entró (total)</div><div class="bv" style="color:var(--green)">${money(totIng)}</div></div>
+        <div style="text-align:center"><div class="bl">Gastado</div><div class="bv" style="color:var(--red)">${money(totGasAll)}</div></div>
+        <div style="text-align:right"><div class="bl" style="color:#c9b8ff">Queda</div><div class="bv" style="color:${queda>=0?'#fff':'var(--red)'}">${money(queda)}</div></div>
+      </div>
+      <div class="balrow"><div style="width:${pq}%;background:var(--green)"></div><div style="width:${pg}%;background:var(--red)"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Queda ${pq}%</span><span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
+    </div>`;
+  }
 
   // metric cards
   h+=`<div class="grid cards4" style="margin-bottom:11px">
@@ -733,6 +759,27 @@ $("modal").onclick=e=>{ if(e.target.id==="modal")closeModal(); };
 
 /* salir */
 $("btnSalir").onclick=()=>signOut(auth); $("mbSalir").onclick=()=>signOut(auth);
+if($("btnRefresh")) $("btnRefresh").onclick=()=>location.reload();
+
+/* jalar para actualizar (celular) */
+(function(){
+  let sy=0, dy=0, active=false; const TH=70;
+  const ptr=()=>$("ptr"), pill=()=>$("ptrPill");
+  window.addEventListener("touchstart",e=>{
+    const appOpen = !$("app").classList.contains("hidden");
+    if(appOpen && (window.scrollY||document.documentElement.scrollTop||0)<=0){ sy=e.touches[0].clientY; active=true; dy=0; }
+    else active=false;
+  },{passive:true});
+  window.addEventListener("touchmove",e=>{
+    if(!active)return; dy=e.touches[0].clientY-sy;
+    if(dy>0){ const p=Math.min(dy*0.5,80); ptr().style.transform=`translateY(${p-46}px)`; pill().textContent = dy>=TH ? "↻ Suelte para actualizar" : "↓ Jale para actualizar"; }
+  },{passive:true});
+  window.addEventListener("touchend",()=>{
+    if(!active)return; active=false;
+    if(dy>=TH){ pill().textContent="Actualizando…"; ptr().style.transform="translateY(6px)"; setTimeout(()=>location.reload(),150); }
+    else { ptr().style.transform="translateY(-46px)"; }
+  });
+})();
 
 /* ============================ LOGIN ============================ */
 if(auth){
