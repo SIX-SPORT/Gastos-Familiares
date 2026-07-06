@@ -549,7 +549,7 @@ function renderPanel(){
     const C=326.7256; let acc=0;
     const arcs=cats.map(([n,v])=>{ const frac=v/totGas; const dash=frac*C; const rot=-90+acc*360; acc+=frac; return `<circle cx="70" cy="70" r="52" fill="none" stroke="${catColor(n)}" stroke-width="16" stroke-dasharray="${dash.toFixed(1)} ${(C-dash).toFixed(1)}" transform="rotate(${rot.toFixed(1)} 70 70)"/>`; }).join("");
     h+=`<div class="donutbox"><div style="position:relative;width:120px;height:120px;flex:none"><svg viewBox="0 0 140 140" width="120" height="120"><circle cx="70" cy="70" r="52" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="16"/>${arcs}</svg><div class="hole"><span class="hl">Total</span><span class="hv num">${shortMoney(totGas)}</span></div></div>
-      <div class="catlist">`+cats.slice(0,5).map(([n,v])=>`<div class="catrow"><span class="nm"><span class="dot" style="background:${catColor(n)}"></span> ${esc(n)}</span><span class="am num">${money(v)}</span></div>`).join("")+`</div></div>`;
+      <div class="catlist">`+cats.map(([n,v])=>`<div class="catrow"><span class="nm"><span class="dot" style="background:${catColor(n)}"></span> ${esc(n)}</span><span class="am num">${money(v)}</span></div>`).join("")+`</div></div>`;
   } else { h+=`<div class="empty">Sin gastos en ${esc(periodLabel().toLowerCase())}.</div>`; }
   // presupuesto
   if(cfg.presupuesto>0){
