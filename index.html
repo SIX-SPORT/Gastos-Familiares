@@ -92,6 +92,11 @@
   .balrow{display:flex;height:22px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.06)}
   .balrow>div{height:22px;transition:width .3s}
   .dtrow{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid rgba(255,255,255,.06);cursor:pointer}
+  .pkgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .pkgrid button{padding:10px 0;border-radius:10px;background:rgba(255,255,255,.05);color:var(--soft);font-size:13px;font-weight:600}
+  .pkgrid button.on{background:var(--accent);color:var(--acc-ink);font-weight:800}
+  .pkarrow{width:34px;height:34px;border-radius:999px;background:rgba(255,255,255,.06);color:#e9e5f5;font-size:17px;display:flex;align-items:center;justify-content:center}
+  .pkquick{flex:1;padding:10px 0;border-radius:10px;background:rgba(255,255,255,.05);color:var(--soft);font-size:12.5px;font-weight:700}
   .only-mobile{display:none}
   .perbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--cardb);border-radius:12px;padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:#e9e5f5;margin-bottom:9px}
   .perbar .cur{color:var(--dim);font-weight:400;font-size:12px}
@@ -342,6 +347,32 @@
   </div>
 </div>
 
+<!-- SELECTOR de mes / año / día -->
+<div id="picker" class="modal hidden">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="margin:0">Elegir período</h3>
+      <span id="pkClose" style="color:var(--muted);font-size:22px;cursor:pointer;line-height:1">✕</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px">
+      <button id="pkPrevY" class="pkarrow">‹</button>
+      <span id="pkYear" style="color:#fff;font-size:18px;font-weight:800;min-width:74px;text-align:center">2026</span>
+      <button id="pkNextY" class="pkarrow">›</button>
+    </div>
+    <div id="pkMonths" class="pkgrid"></div>
+    <div style="display:flex;gap:8px;margin:14px 0">
+      <button id="pkHoy" class="pkquick">Mes actual</button>
+      <button id="pkAnio" class="pkquick">Todo el año</button>
+      <button id="pkTotal" class="pkquick">Todo</button>
+    </div>
+    <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:13px">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:6px">Ver un día exacto</div>
+      <input type="date" id="pkDate" class="field">
+    </div>
+    <button class="cancel" id="pkCancel">Cerrar</button>
+  </div>
+</div>
+
 <script src="config.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -373,7 +404,7 @@ const CUR = {
   NI:{sym:"C$",code:"NIO",loc:"es-NI",dec:0,col:"hogar_ni",usd:true,name:"Nicaragua",tc:36.8},
   ES:{sym:"€",code:"EUR",loc:"es-ES",dec:2,col:"hogar_es",usd:false,name:"España",tc:1}
 };
-const PAL=["#8b5cf6","#f472b6","#60a5fa","#34d399","#fbbf24","#fb7185","#a78bfa","#22d3ee","#c084fc","#4ade80","#f59e0b","#94a3b8"];
+const PAL=["#8b5cf6","#f472b6","#60a5fa","#fbbf24","#fb7185","#22d3ee","#f59e0b","#34d399","#c084fc","#a78bfa","#4ade80","#94a3b8"];
 const DEFG=["Supermercado","Colegio","Cable/Internet","Gasolina","Restaurantes","Barbería","Salud","Transporte","Casa","Ropa","Servicios","Otros"];
 const CATICON={Supermercado:"🛒","Cable/Internet":"📶",Colegio:"🎓",Gasolina:"⛽",Restaurantes:"🍽️",Barbería:"💈",Salud:"➕",Transporte:"🚌",Casa:"🏠",Ropa:"👕",Servicios:"🔌",Salario:"💵",Extra:"💰",Otro:"•",Otros:"•",Ahorro:"🐷",Emergencia:"🛟"};
 
@@ -381,12 +412,12 @@ function defaultCfg(pais){
   return { hogar:"Nuestro hogar", tc:CUR[pais].tc, meta:0, presupuesto:0,
     personas:["Mamá","Papá","Hijo"],
     gastos:DEFG.map((n,i)=>({n,c:PAL[i%PAL.length]})),
-    ingresos:[{n:"Salario",c:PAL[3]},{n:"Extra",c:PAL[4]},{n:"Otro",c:PAL[6]}],
-    ahorros:[{n:"Ahorro",c:PAL[2]},{n:"Emergencia",c:PAL[5]}] };
+    ingresos:["Salario","Extra","Otro"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
+    ahorros:["Ahorro","Emergencia"].map((n,i)=>({n,c:PAL[i%PAL.length]})) };
 }
 function normList(arr,fallback){
   if(!Array.isArray(arr)||!arr.length) return fallback;
-  return arr.map((x,i)=> typeof x==="string" ? {n:x,c:PAL[i%PAL.length]} : {n:x.n||x.nombre||"—",c:x.c||x.color||PAL[i%PAL.length]});
+  return arr.map((x,i)=> ({ n:(typeof x==="string"?x:(x.n||x.nombre||"—")), c:PAL[i%PAL.length] }));
 }
 function migrateCfg(pais,raw){
   const d=defaultCfg(pais);
@@ -404,7 +435,8 @@ function migrateCfg(pais,raw){
 }
 
 /* ---------- estado ---------- */
-let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), editId:null };
+let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), diaRef:"", editId:null };
+state.diaRef=(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-"+String(new Date().getDate()).padStart(2,"0"));
 let perOpen=false;
 let tx=[], cfg=defaultCfg("CR");
 
@@ -442,7 +474,7 @@ function shortMoney(v){ v=v||0; let sym,a; if(state.verUSD&&CUR[state.pais].usd)
 function inPeriod(f){
   if(state.period==="total") return true;
   const now=today();
-  if(state.period==="dia") return f===now;
+  if(state.period==="dia") return f===(state.diaRef||now);
   if(state.period==="semana"){ const [a,b]=weekRange(); return f>=a&&f<=b; }
   if(state.period==="mes") return f.slice(0,7)===state.mesRef;
   if(state.period==="anio") return f.slice(0,4)===state.mesRef.slice(0,4);
@@ -454,7 +486,7 @@ function endOfPeriod(){
   if(state.period==="anio") return mesRefY()+"-12-31";
   if(state.period==="mes"){ const y=mesRefY(),m=mesRefM(); return ymd(new Date(y,m,lastDayOfMonth(y,m))); }
   if(state.period==="semana") return weekRange()[1];
-  return today();
+  return state.diaRef||today();
 }
 const sum = arr => arr.reduce((s,t)=>s+(+t.monto||0),0);
 function sumType(list,tipo){ return sum(list.filter(t=>t.tipo===tipo)); }
@@ -490,7 +522,7 @@ function switchCountry(c){ if(c===state.pais)return; state.pais=c; state.persona
 
 /* ============================ PANEL ============================ */
 function periodLabel(){ return {dia:"Hoy",semana:"Esta semana",mes:"Este mes",anio:"Este año",total:"Total"}[state.period]; }
-function monthTitle(){ return state.period==="mes"?mesRefLabel():state.period==="anio"?("Año "+mesRefY()):periodLabel(); }
+function monthTitle(){ if(state.period==="mes")return mesRefLabel(); if(state.period==="anio")return "Año "+mesRefY(); if(state.period==="dia")return state.diaRef===today()?"Hoy":fechaLarga(state.diaRef); return periodLabel(); }
 
 function renderPanel(){
   const per=periodSet();
@@ -581,11 +613,11 @@ function renderPanel(){
 
   $("viewPanel").innerHTML=h;
   // wire
-  $("perBtns").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.period=b.dataset.p;renderPanel();buildSidebar();});
+  $("perBtns").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.period=b.dataset.p; if(b.dataset.p==="dia")state.diaRef=today(); renderPanel();buildSidebar();});
   const goMes=fn=>{ fn(); state.period="mes"; renderPanel(); buildSidebar(); };
   if($("mPrev"))$("mPrev").onclick=()=>goMes(()=>shiftMes(-1));
   if($("mNext"))$("mNext").onclick=()=>goMes(()=>shiftMes(1));
-  if($("mCur"))$("mCur").onclick=()=>goMes(()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); });
+  if($("mCur"))$("mCur").onclick=()=>openPicker();
   if($("mReset"))$("mReset").onclick=()=>goMes(()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); });
   if($("ppBar"))$("ppBar").onclick=()=>{perOpen=!perOpen;renderPanel();};
   if($("ppChips"))$("ppChips").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.persona=b.dataset.p;renderPanel();buildSidebar();});
@@ -753,6 +785,14 @@ window.openDetalle=tipo=>{
   $("dtList").querySelectorAll("[data-mv]").forEach(el=>el.onclick=()=>{ $("detalle").classList.add("hidden"); openMov(el.dataset.mv); });
 };
 function closeDetalle(){ $("detalle").classList.add("hidden"); }
+let pkYear=null;
+window.openPicker=()=>{ pkYear=mesRefY(); $("pkDate").value=state.diaRef||today(); renderPicker(); $("picker").classList.remove("hidden"); };
+function renderPicker(){
+  $("pkYear").textContent=pkYear;
+  $("pkMonths").innerHTML=MESL.map((m,i)=>`<button data-m="${i}" class="${(state.period==='mes'&&mesRefY()===pkYear&&mesRefM()===i)?'on':''}">${m.slice(0,3)}</button>`).join("");
+  $("pkMonths").querySelectorAll("button").forEach(b=>b.onclick=()=>{ state.mesRef=pkYear+"-"+String(+b.dataset.m+1).padStart(2,"0"); state.period="mes"; closePicker(); renderPanel(); buildSidebar(); });
+}
+function closePicker(){ $("picker").classList.add("hidden"); }
 async function saveModal(){
   const monto=+$("fMonto").value; if(!monto||monto<=0){ $("fMonto").focus(); return; }
   const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto:Math.abs(monto), descripcion:$("fDesc").value.trim(), verificado:mdVerif };
@@ -782,6 +822,14 @@ $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",md
 $("modal").onclick=e=>{ if(e.target.id==="modal")closeModal(); };
 $("dtClose").onclick=closeDetalle; $("dtCancel").onclick=closeDetalle;
 $("detalle").onclick=e=>{ if(e.target.id==="detalle")closeDetalle(); };
+$("pkClose").onclick=closePicker; $("pkCancel").onclick=closePicker;
+$("picker").onclick=e=>{ if(e.target.id==="picker")closePicker(); };
+$("pkPrevY").onclick=()=>{ pkYear--; renderPicker(); };
+$("pkNextY").onclick=()=>{ pkYear++; renderPicker(); };
+$("pkHoy").onclick=()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); state.period="mes"; closePicker(); renderPanel(); buildSidebar(); };
+$("pkAnio").onclick=()=>{ state.mesRef=pkYear+"-01"; state.period="anio"; closePicker(); renderPanel(); buildSidebar(); };
+$("pkTotal").onclick=()=>{ state.period="total"; closePicker(); renderPanel(); buildSidebar(); };
+$("pkDate").onchange=()=>{ const v=$("pkDate").value; if(v){ state.diaRef=v; state.mesRef=v.slice(0,7); state.period="dia"; closePicker(); renderPanel(); buildSidebar(); } };
 
 /* salir */
 $("btnSalir").onclick=()=>signOut(auth); $("mbSalir").onclick=()=>signOut(auth);
