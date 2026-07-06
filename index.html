@@ -91,6 +91,7 @@
   .balbar .bv{font-size:22px;font-weight:800}
   .balrow{display:flex;height:22px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.06)}
   .balrow>div{height:22px;transition:width .3s}
+  .dtrow{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid rgba(255,255,255,.06);cursor:pointer}
   .only-mobile{display:none}
   .perbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--cardb);border-radius:12px;padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:#e9e5f5;margin-bottom:9px}
   .perbar .cur{color:var(--dim);font-weight:400;font-size:12px}
@@ -217,6 +218,7 @@
   .mbar .l{display:flex;align-items:center;gap:8px}
   .mbar .l .nm{font-size:15px;font-weight:800}
   .mbar .salir{color:var(--muted);font-size:12px;font-weight:600}
+  @media (max-width:520px){ .sheet .row{flex-direction:column;gap:9px} }
   .paises-mini{display:flex;gap:6px;flex-wrap:wrap}
   .paises-mini button{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);background:rgba(255,255,255,.05);padding:9px 14px;border-radius:999px;border:1px solid transparent;font-weight:600}
   .paises-mini button.on{background:var(--accbg);color:#e9e5f5;border-color:var(--accbd)}
@@ -324,6 +326,19 @@
     <button class="save" id="mdSave">Guardar</button>
     <button class="del hidden" id="mdDel">Borrar</button>
     <button class="cancel" id="mdCancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- DETALLE (tocar tarjetas de Resumen) -->
+<div id="detalle" class="modal hidden">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h3 id="dtTitle" style="margin:0">Detalle</h3>
+      <span id="dtClose" style="color:var(--muted);font-size:22px;cursor:pointer;line-height:1">✕</span>
+    </div>
+    <div id="dtSub" style="font-size:13px;margin-bottom:12px"></div>
+    <div id="dtList"></div>
+    <button class="cancel" id="dtCancel">Cerrar</button>
   </div>
 </div>
 
@@ -658,9 +673,9 @@ function renderRes(){
   const savedP=state.period; state.period="mes"; const disp=dispAcum(endOfPeriod()); state.period=savedP;
   let h=`<div class="mtop"><div><h2>Resumen</h2><div class="sub">${mesRefLabel()}</div></div><div class="toolr mtophide">${CUR[state.pais].usd?`<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>`:""}</div></div>`;
   h+=`<div class="grid cards4" style="margin-bottom:12px">
-    <div class="mc"><div class="l">Ingresos</div><div class="v num" style="color:var(--green)">${money(ing)}</div></div>
-    <div class="mc"><div class="l">Gastos</div><div class="v num" style="color:var(--red)">${money(gas)}</div></div>
-    <div class="mc"><div class="l">Ahorros</div><div class="v num" style="color:var(--blue)">${money(aho)}</div></div>
+    <div class="mc" data-det="ingreso" style="cursor:pointer"><div class="l">Ingresos <span style="float:right;color:#c9b8ff;font-size:11px">ver ›</span></div><div class="v num" style="color:var(--green)">${money(ing)}</div></div>
+    <div class="mc" data-det="gasto" style="cursor:pointer"><div class="l">Gastos <span style="float:right;color:#c9b8ff;font-size:11px">ver ›</span></div><div class="v num" style="color:var(--red)">${money(gas)}</div></div>
+    <div class="mc" data-det="ahorro" style="cursor:pointer"><div class="l">Ahorros <span style="float:right;color:#c9b8ff;font-size:11px">ver ›</span></div><div class="v num" style="color:var(--blue)">${money(aho)}</div></div>
     <div class="mc acc"><div class="l">Disponible</div><div class="v num">${money(disp)}</div></div></div>`;
 
   // tendencia 6 meses
@@ -675,6 +690,7 @@ function renderRes(){
   h+=`<div class="grid col-2"><div class="card"><div class="t">Gasto por persona (${mesRefLabel()})</div>`+e.map((x,i)=>{const pct=tot?Math.round(x[1]/tot*100):0;return `<div class="prow"><div class="top"><span class="nm">${esc(x[0])}</span><span class="am">${money(x[1])} <span style="color:var(--dim);font-weight:400">${pct}%</span></span></div><div class="track"><i style="width:${pct}%;background:${PAL[i%PAL.length]}"></i></div></div>`;}).join("")+`</div>`;
   h+=metaCard()+`</div>`;
   $("viewRes").innerHTML=h; wireCurToggle();
+  $("viewRes").querySelectorAll("[data-det]").forEach(el=>el.onclick=()=>openDetalle(el.dataset.det));
 }
 
 /* ============================ AJUSTES ============================ */
@@ -729,6 +745,19 @@ function openAdd(){ state.editId=null; $("mdTitle").textContent="Agregar"; $("md
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden");
   setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fMonto").value=t.monto; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
+const TIPO_DET={ingreso:{lbl:"Ingresos",col:"var(--green)",sg:"+"},gasto:{lbl:"Gastos",col:"var(--red)",sg:"-"},ahorro:{lbl:"Ahorros",col:"var(--blue)",sg:"+"}};
+window.openDetalle=tipo=>{
+  const info=TIPO_DET[tipo]; if(!info)return;
+  const list=tx.filter(t=>t.tipo===tipo && t.fecha.slice(0,7)===state.mesRef).sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:0);
+  const total=sum(list);
+  $("dtTitle").textContent=info.lbl+" · "+mesRefLabel();
+  $("dtSub").innerHTML=`<span style="color:${info.col};font-weight:700">Total ${money(total)}</span> · ${list.length} movimiento${list.length===1?"":"s"}`;
+  if(!list.length){ $("dtList").innerHTML=`<div class="empty">No hay ${info.lbl.toLowerCase()} en ${esc(mesRefLabel())}.</div>`; }
+  else { $("dtList").innerHTML=list.map(t=>`<div class="dtrow" data-mv="${t.id}"><span class="ic" style="width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:${catColor(t.categoria)}33;color:${catColor(t.categoria)};font-size:15px;flex:none">${catIcon(t.categoria)}</span><div style="flex:1;min-width:0"><div style="color:#fff;font-size:14px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:12px">${esc(t.quien||"")} · ${esc(fechaLarga(t.fecha))}</div></div><span style="color:${info.col};font-size:14px;font-weight:700;white-space:nowrap">${info.sg}${money(t.monto)}</span></div>`).join(""); }
+  $("detalle").classList.remove("hidden");
+  $("dtList").querySelectorAll("[data-mv]").forEach(el=>el.onclick=()=>{ $("detalle").classList.add("hidden"); openMov(el.dataset.mv); });
+};
+function closeDetalle(){ $("detalle").classList.add("hidden"); }
 async function saveModal(){
   const monto=+$("fMonto").value; if(!monto||monto<=0){ $("fMonto").focus(); return; }
   const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto:Math.abs(monto), descripcion:$("fDesc").value.trim(), verificado:mdVerif };
@@ -756,6 +785,8 @@ $("fab").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=
 $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",mdVerif); };
 ["gasto","ingreso","ahorro"].forEach(x=>{ $("t"+x[0].toUpperCase()+x.slice(1)).onclick=()=>setModalTipo(x); });
 $("modal").onclick=e=>{ if(e.target.id==="modal")closeModal(); };
+$("dtClose").onclick=closeDetalle; $("dtCancel").onclick=closeDetalle;
+$("detalle").onclick=e=>{ if(e.target.id==="detalle")closeDetalle(); };
 
 /* salir */
 $("btnSalir").onclick=()=>signOut(auth); $("mbSalir").onclick=()=>signOut(auth);
