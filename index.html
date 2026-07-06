@@ -531,20 +531,15 @@ function renderPanel(){
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:11px;flex-wrap:wrap">
         <div><div class="bl">Entró (total)</div><div class="bv" style="color:var(--green)">${money(totIng)}</div></div>
         <div style="text-align:center"><div class="bl">Gastado</div><div class="bv" style="color:var(--red)">${money(totGasAll)}</div></div>
-        <div style="text-align:right"><div class="bl" style="color:#c9b8ff">Queda</div><div class="bv" style="color:${queda>=0?'#fff':'var(--red)'}">${money(queda)}</div></div>
+        <div style="text-align:right"><div class="bl" style="color:#c9b8ff">Disponible</div><div class="bv" style="color:${queda>=0?'#fff':'var(--red)'}">${money(queda)}</div></div>
       </div>
       <div class="balrow"><div style="width:${pq}%;background:var(--green)"></div><div style="width:${pg}%;background:var(--red)"></div></div>
-      <div style="display:flex;justify-content:space-between;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Queda ${pq}%</span><span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Disponible ${pq}%</span><span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
     </div>`;
   }
 
-  // metric cards
-  h+=`<div class="grid cards4" style="margin-bottom:11px">
-    <div class="mc"><div class="l">Ingresos</div><div class="v num">${money(ing)}</div><div class="s"><span class="dot" style="background:var(--green)"></span> del periodo</div></div>
-    <div class="mc"><div class="l">Gastos</div><div class="v num">${money(gas)}</div><div class="s"><span class="dot" style="background:var(--red)"></span> del periodo</div></div>
-    <div class="mc"><div class="l">Ahorros</div><div class="v num">${money(aho)}</div><div class="s"><span class="dot" style="background:var(--blue)"></span> aparte</div></div>
-    <div class="mc acc"><div class="l">Disponible</div><div class="v num">${money(disp)}</div><div class="s" style="color:#c9b8ff">${arr?("incluye "+money(arr)+" del mes pasado"):"dinero que queda"}</div></div>
-  </div>`;
+  // (las tarjetas de Ingresos/Gastos/Ahorros/Disponible se quitaron del Panel:
+  //  la barra de balance ya muestra Entró/Gastado/Disponible. Siguen en Resumen, ahí sí se pueden tocar.)
 
   // gastos card (a lo ancho; la meta pasó a Resumen)
   h+=`<div style="margin-bottom:11px">`;
