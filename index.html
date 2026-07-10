@@ -859,7 +859,7 @@ function parseEstado(text){
   for(const ln of lines){
     const dm=ln.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
     if(dm){ let d=+dm[1],mo=+dm[2],y=+dm[3]; if(y<100)y+=2000; if(d>=1&&d<=31&&mo>=1&&mo<=12){ lastDate=y+"-"+pad2(mo)+"-"+pad2(d); } continue; }
-    let m=ln.match(/([+\-])\s*[₡C¢]?\s*(\d[\d.,]*[.,]\d{2})/); if(!m) m=ln.match(/[₡¢]\s*(\d[\d.,]*[.,]\d{2})/);
+    let m=ln.match(/([+\-])[^\d\n]{0,4}(\d[\d.,]*[.,]\d{2})/); if(!m) m=ln.match(/[₡¢C€$(]\s*(\d[\d.,]*[.,]\d{2})/);
     if(m){ let sign="-",num; if(m[2]!==undefined){ sign=m[1]; num=m[2]; } else num=m[1]; const monto=Math.round(parseMonto(num)); if(monto>0) movs.push({fecha:lastDate, monto, tipo: sign==="+"?"ingreso":"gasto", desc:lastDesc}); continue; }
     const t=ln.trim(); if(t && !/^[\d\s:.\-apm]+$/i.test(t) && !/eating places/i.test(t)) lastDesc=t;
   }
