@@ -100,6 +100,7 @@
   .cxrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)}
   .cxadd{background:var(--accent);color:var(--acc-ink);font-weight:700;font-size:12px;padding:6px 13px;border-radius:999px;white-space:nowrap}
   .cxbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:rgba(167,139,250,.14);border:1px solid var(--accbd);color:#e9e5f5;font-weight:700;font-size:13px;padding:11px;border-radius:12px;margin-bottom:12px}
+  .cxup{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(167,139,250,.14);border:1px solid var(--accbd);color:#e9e5f5;font-weight:700;font-size:12.5px;padding:13px;border-radius:12px}
   .only-mobile{display:none}
   .perbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--cardb);border-radius:12px;padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:#e9e5f5;margin-bottom:9px}
   .perbar .cur{color:var(--dim);font-weight:400;font-size:12px}
@@ -383,9 +384,17 @@
       <h3 style="margin:0">Verificar estado de cuenta</h3>
       <span id="cxClose" style="color:var(--muted);font-size:22px;cursor:pointer;line-height:1">✕</span>
     </div>
-    <div style="color:var(--muted);font-size:12px;margin-bottom:12px">Pegue los movimientos del banco: una línea por gasto, con la <b>fecha y el monto</b>.<br>Ej: <span style="color:var(--soft)">04/07 12000</span> · <span style="color:var(--soft)">04/07/2026 ₡9.500</span></div>
-    <textarea id="cxText" class="field" rows="5" placeholder="04/07  12000&#10;05/07  9500&#10;05/07  25000" style="resize:vertical;line-height:1.6"></textarea>
-    <button class="save" id="cxCompare" style="margin-top:10px">Comparar</button>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:10px">Suba el <b>PDF</b> o una <b>foto/captura</b> del estado de cuenta, y la app lee los movimientos. También puede pegar el texto a mano.</div>
+    <div style="display:flex;gap:9px;margin-bottom:8px">
+      <button class="cxup" id="cxPdfBtn"><span style="font-size:20px">📄</span>Subir PDF</button>
+      <button class="cxup" id="cxImgBtn"><span style="font-size:20px">📷</span>Subir foto / captura</button>
+    </div>
+    <input type="file" id="cxPdf" accept="application/pdf,.pdf" style="display:none">
+    <input type="file" id="cxImg" accept="image/*" style="display:none">
+    <div id="cxStatus" style="color:#c9b8ff;font-size:12px;margin-bottom:8px"></div>
+    <div style="color:var(--muted);font-size:11px;margin-bottom:6px">…o pegue el texto aquí:</div>
+    <textarea id="cxText" class="field" rows="4" placeholder="Pegue aquí los movimientos del banco, o suba el PDF/foto arriba." style="resize:vertical;line-height:1.6"></textarea>
+    <button class="save" id="cxCompare" style="margin-top:10px">Comparar con lo registrado</button>
     <div id="cxResult"></div>
     <button class="cancel" id="cxCancel">Cerrar</button>
   </div>
@@ -799,7 +808,7 @@ function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingre
 function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); }
 let mdVerif=false;
 function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden");
-  setModalTipo("gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
+  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden");
   setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fMonto").value=t.monto; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
@@ -826,44 +835,85 @@ function renderPicker(){
 function closePicker(){ $("picker").classList.add("hidden"); }
 
 /* ---- Verificar estado de cuenta ---- */
+const pad2=n=>String(n).padStart(2,"0");
+function parseMonto(s){ s=String(s).replace(/[^\d.,]/g,""); if(!s) return NaN;
+  const dec=Math.max(s.lastIndexOf("."),s.lastIndexOf(","));
+  let intPart=s, decPart="";
+  if(dec>=0){ const after=s.slice(dec+1); if(after.length>=1&&after.length<=2){ intPart=s.slice(0,dec).replace(/[.,]/g,""); decPart=after; } else { intPart=s.replace(/[.,]/g,""); } }
+  return parseFloat(intPart+(decPart?"."+decPart:"")); }
 function parseLineaBanco(line){
   const raw=(line||"").trim(); if(!raw) return null;
   let fecha=null, rest=raw;
   const dm=raw.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
   if(dm){ let d=+dm[1], mo=+dm[2], y=dm[3]?+dm[3]:mesRefY(); if(y<100)y+=2000;
-    if(d>=1&&d<=31&&mo>=1&&mo<=12){ fecha=y+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0"); rest=raw.replace(dm[0]," "); } }
-  let s=rest.replace(/[^\d.,]/g,"").trim(); if(!s) return null;
-  let monto;
-  if(CUR[state.pais].dec>0){ s=s.replace(/\.(?=\d{3}\b)/g,"").replace(",","."); monto=parseFloat(s); }
-  else { monto=parseInt(s.replace(/[.,]/g,""),10); }
+    if(d>=1&&d<=31&&mo>=1&&mo<=12){ fecha=y+"-"+pad2(mo)+"-"+pad2(d); rest=raw.replace(dm[0]," "); } }
+  const nums=rest.replace(/[^\d.,\s]/g," ").trim().split(/\s+/).filter(Boolean);
+  if(!nums.length) return null;
+  const numStr=nums.sort((a,b)=>b.replace(/\D/g,"").length-a.replace(/\D/g,"").length)[0];
+  const monto=Math.round(parseMonto(numStr));
   if(!monto||isNaN(monto)||monto<=0) return null;
-  return {fecha, monto};
+  return {fecha, monto, tipo:"gasto"};
 }
-window.openConcil=()=>{ $("cxText").value=""; $("cxResult").innerHTML=""; $("concil").classList.remove("hidden"); };
+function parseEstado(text){
+  const lines=text.split(/\r?\n/); const movs=[]; let lastDate=null, lastDesc="";
+  for(const ln of lines){
+    const dm=ln.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if(dm){ let d=+dm[1],mo=+dm[2],y=+dm[3]; if(y<100)y+=2000; if(d>=1&&d<=31&&mo>=1&&mo<=12){ lastDate=y+"-"+pad2(mo)+"-"+pad2(d); } continue; }
+    let m=ln.match(/([+\-])\s*[₡C¢]?\s*(\d[\d.,]*[.,]\d{2})/); if(!m) m=ln.match(/[₡¢]\s*(\d[\d.,]*[.,]\d{2})/);
+    if(m){ let sign="-",num; if(m[2]!==undefined){ sign=m[1]; num=m[2]; } else num=m[1]; const monto=Math.round(parseMonto(num)); if(monto>0) movs.push({fecha:lastDate, monto, tipo: sign==="+"?"ingreso":"gasto", desc:lastDesc}); continue; }
+    const t=ln.trim(); if(t && !/^[\d\s:.\-apm]+$/i.test(t) && !/eating places/i.test(t)) lastDesc=t;
+  }
+  return movs;
+}
+function parseText(text){
+  if(/([+\-]\s*[₡C¢]?\s*\d)|[₡¢]\s*\d|\d[.,]\d{2}\b/.test(text)) return parseEstado(text);
+  return text.split(/\r?\n/).map(parseLineaBanco).filter(Boolean);
+}
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=()=>rej(new Error("load")); document.head.appendChild(s); }); }
+let _pdf=null;
+async function readPDF(file){
+  if(!_pdf){ _pdf=loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js").then(()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }); }
+  await _pdf; const buf=await file.arrayBuffer();
+  const pdf=await window.pdfjsLib.getDocument({data:buf}).promise; let text="";
+  for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const c=await page.getTextContent(); let lastY=null,line="";
+    for(const it of c.items){ const y=it.transform[5]; if(lastY!==null&&Math.abs(y-lastY)>3){ text+=line+"\n"; line=""; } line+=it.str+" "; lastY=y; } text+=line+"\n"; }
+  return text;
+}
+let _tess=null;
+async function readFoto(file){
+  if(!_tess){ _tess=loadScript("https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"); }
+  await _tess; const worker=await window.Tesseract.createWorker("eng");
+  const {data}=await worker.recognize(file); await worker.terminate(); return data.text;
+}
+window.openConcil=()=>{ $("cxText").value=""; $("cxResult").innerHTML=""; $("cxStatus").textContent=""; $("concil").classList.remove("hidden"); };
 function closeConcil(){ $("concil").classList.add("hidden"); }
+async function leerArchivo(file,kind){
+  if(!file) return;
+  $("cxStatus").textContent = kind==="pdf" ? "Leyendo el PDF…" : "Leyendo la imagen… (la primera vez tarda unos segundos)";
+  $("cxResult").innerHTML="";
+  try{
+    const text = kind==="pdf" ? await readPDF(file) : await readFoto(file);
+    $("cxText").value=(text||"").trim(); $("cxStatus").textContent=""; conciliar();
+  }catch(e){ $("cxStatus").textContent="No se pudo leer el archivo. Use una captura clara, o pegue el texto abajo."; }
+}
 function conciliar(){
-  const lines=$("cxText").value.split("\n").map(parseLineaBanco).filter(Boolean);
-  if(!lines.length){ $("cxResult").innerHTML=`<div class="empty">Pegue al menos un movimiento (fecha y monto).</div>`; return; }
-  const pool=tx.filter(t=>t.tipo==="gasto"); const usados=new Set();
-  const res=lines.map(L=>{
-    let idx=pool.findIndex((t,i)=>!usados.has(i) && Math.round(+t.monto)===Math.round(L.monto) && (!L.fecha || t.fecha===L.fecha));
-    if(idx<0 && L.fecha) idx=pool.findIndex((t,i)=>!usados.has(i) && Math.round(+t.monto)===Math.round(L.monto)); // 2do intento: solo monto
-    if(idx>=0){ usados.add(idx); return {...L, ok:true}; }
-    return {...L, ok:false};
+  const movs=parseText($("cxText").value);
+  if(!movs.length){ $("cxResult").innerHTML=`<div class="empty">No se detectaron movimientos.<br>Suba el PDF/foto o pegue el texto arriba.</div>`; return; }
+  const pool=tx.slice(); const usados=new Set();
+  const res=movs.map(M=>{
+    let idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto)&&(!M.fecha||t.fecha===M.fecha));
+    if(idx<0&&M.fecha) idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto));
+    if(idx>=0){ usados.add(idx); return {...M,ok:true}; } return {...M,ok:false};
   });
-  const bancoTot=lines.reduce((s,L)=>s+L.monto,0);
-  const faltan=res.filter(r=>!r.ok);
-  const okTot=res.filter(r=>r.ok).reduce((s,r)=>s+r.monto,0);
-  const faltTot=faltan.reduce((s,r)=>s+r.monto,0);
-  let h=`<div style="display:flex;justify-content:space-between;background:rgba(255,255,255,.04);border-radius:12px;padding:11px 13px;margin:14px 0 12px">
-    <div><div style="color:var(--muted);font-size:11px">Banco</div><div style="color:#fff;font-size:16px;font-weight:800">${money(bancoTot)}</div></div>
-    <div style="text-align:center"><div style="color:var(--muted);font-size:11px">Registrado</div><div style="color:#fff;font-size:16px;font-weight:800">${money(okTot)}</div></div>
-    <div style="text-align:right"><div style="color:${faltTot>0?'var(--red)':'var(--green)'};font-size:11px">Faltan</div><div style="color:${faltTot>0?'var(--red)':'var(--green)'};font-size:16px;font-weight:800">${money(faltTot)}</div></div></div>`;
-  if(faltan.length){ h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.35);border-radius:12px;padding:10px 12px;margin-bottom:12px"><span style="color:var(--red);font-size:18px">⚠</span><span style="color:#f3d0d6;font-size:12.5px">${faltan.length} monto${faltan.length===1?"":"s"} del banco no está${faltan.length===1?"":"n"} registrado${faltan.length===1?"":"s"}. Agréguelo${faltan.length===1?"":"s"} para cuadrar.</span></div>`; }
-  else { h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);border-radius:12px;padding:10px 12px;margin-bottom:12px"><span style="color:var(--green);font-size:18px">✓</span><span style="color:#c9f0dd;font-size:12.5px">¡Todo cuadra! Cada movimiento del banco está registrado.</span></div>`; }
-  h+=res.map((r,i)=>`<div class="cxrow"><span style="color:${r.ok?'#e9e5f5':'#fff'};font-size:13px">${r.ok?'<span style="color:var(--green)">✓</span>':'<span style="color:var(--red)">⚠</span>'} ${money(r.monto)}${r.fecha?` · ${esc(fechaLarga(r.fecha).replace(/ \d{4}$/,''))}`:""} <span style="color:var(--dim)">${r.ok?'· ya registrado':'· falta'}</span></span>${r.ok?"":`<button class="cxadd" data-i="${i}">Agregar</button>`}</div>`).join("");
+  const faltan=res.filter(r=>!r.ok); const faltTot=faltan.reduce((s,r)=>s+r.monto,0);
+  let h=`<div style="color:var(--soft);font-size:12px;margin:14px 0 10px">${res.length} leído${res.length===1?"":"s"} · <span style="color:var(--green)">${res.length-faltan.length} ya está${res.length-faltan.length===1?"":"n"}</span> · <span style="color:${faltan.length?'var(--red)':'var(--green)'}">${faltan.length} falta${faltan.length===1?"":"n"}</span></div>`;
+  if(faltan.length) h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--red);font-size:18px">⚠</span><span style="color:#f3d0d6;font-size:12.5px">${faltan.length} del banco no está${faltan.length===1?"":"n"} registrado${faltan.length===1?"":"s"} (${money(faltTot)}). Toque Agregar.</span></div>`;
+  else h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--green);font-size:18px">✓</span><span style="color:#c9f0dd;font-size:12.5px">¡Todo cuadra!</span></div>`;
+  h+=res.map((r,i)=>{ const col=r.tipo==="ingreso"?"var(--green)":"var(--red)"; const sg=r.tipo==="ingreso"?"+":"-";
+    return `<div class="cxrow"><span style="font-size:13px">${r.ok?'<span style="color:var(--green)">✓</span>':'<span style="color:var(--red)">⚠</span>'} <span style="color:${col};font-weight:700">${sg}${money(r.monto)}</span>${r.fecha?` <span style="color:var(--dim)">· ${esc(fechaLarga(r.fecha).replace(/ \d{4}$/,""))}</span>`:""}${r.desc?` <span style="color:var(--dim)">· ${esc(r.desc.slice(0,16))}</span>`:""}</span>${r.ok?'<span style="color:var(--dim);font-size:11px">ya está</span>':`<button class="cxadd" data-i="${i}">Agregar</button>`}</div>`;
+  }).join("");
   $("cxResult").innerHTML=h;
-  $("cxResult").querySelectorAll(".cxadd").forEach(b=>b.onclick=()=>{ const r=res[+b.dataset.i]; closeConcil(); openAdd({monto:r.monto,fecha:r.fecha||today()}); });
+  $("cxResult").querySelectorAll(".cxadd").forEach(b=>b.onclick=()=>{ const r=res[+b.dataset.i]; closeConcil(); openAdd({monto:r.monto,fecha:r.fecha||today(),tipo:r.tipo}); });
 }
 async function saveModal(){
   const monto=+$("fMonto").value; if(!monto||monto<=0){ $("fMonto").focus(); return; }
@@ -905,6 +955,10 @@ $("pkDate").onchange=()=>{ const v=$("pkDate").value; if(v){ state.diaRef=v; sta
 $("cxClose").onclick=closeConcil; $("cxCancel").onclick=closeConcil;
 $("concil").onclick=e=>{ if(e.target.id==="concil")closeConcil(); };
 $("cxCompare").onclick=conciliar;
+$("cxPdfBtn").onclick=()=>$("cxPdf").click();
+$("cxImgBtn").onclick=()=>$("cxImg").click();
+$("cxPdf").onchange=e=>{ leerArchivo(e.target.files[0],"pdf"); e.target.value=""; };
+$("cxImg").onchange=e=>{ leerArchivo(e.target.files[0],"img"); e.target.value=""; };
 
 /* salir */
 $("btnSalir").onclick=()=>signOut(auth); $("mbSalir").onclick=()=>signOut(auth);
