@@ -885,14 +885,16 @@ async function readFoto(file){
   await _tess; const worker=await window.Tesseract.createWorker("eng");
   const {data}=await worker.recognize(file); await worker.terminate(); return data.text;
 }
-window.openConcil=()=>{ $("cxText").value=""; $("cxResult").innerHTML=""; $("cxStatus").textContent=""; $("concil").classList.remove("hidden"); };
+window.openConcil=()=>{ $("cxText").value=""; $("cxResult").innerHTML=""; $("cxStatus").textContent=""; cxFromImg=false; $("concil").classList.remove("hidden"); };
 function closeConcil(){ $("concil").classList.add("hidden"); }
+let cxFromImg=false;
 async function leerArchivo(file,kind){
   if(!file) return;
   $("cxStatus").textContent = kind==="pdf" ? "Leyendo el PDF…" : "Leyendo la imagen… (la primera vez tarda unos segundos)";
   $("cxResult").innerHTML="";
   try{
     const text = kind==="pdf" ? await readPDF(file) : await readFoto(file);
+    cxFromImg = kind==="img";
     $("cxText").value=(text||"").trim(); $("cxStatus").textContent=""; conciliar();
   }catch(e){ $("cxStatus").textContent="No se pudo leer el archivo. Use una captura clara, o pegue el texto abajo."; }
 }
@@ -910,7 +912,7 @@ function conciliar(){
   cxRes=movs.map(M=>{
     let idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto)&&(!M.fecha||t.fecha===M.fecha));
     if(idx<0&&M.fecha) idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto));
-    if(idx>=0){ usados.add(idx); return {...M,ok:true,added:false,pick:null,editing:false}; } return {...M,ok:false,added:false,pick:null,editing:false};
+    if(idx>=0){ usados.add(idx); return {...M,ok:true,added:false,pick:null,editing:false,fromImg:cxFromImg}; } return {...M,ok:false,added:false,pick:null,editing:false,fromImg:cxFromImg};
   });
   renderCx();
 }
@@ -920,12 +922,17 @@ function renderCx(){
   let h=`<div style="color:var(--soft);font-size:12px;margin:14px 0 10px">${res.length} leído${res.length===1?"":"s"} · <span style="color:var(--green)">${res.length-faltan.length} ya está${res.length-faltan.length===1?"":"n"}</span> · <span style="color:${faltan.length?'var(--red)':'var(--green)'}">${faltan.length} falta${faltan.length===1?"":"n"}</span></div>`;
   if(faltan.length){
     h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--red);font-size:18px">⚠</span><span style="color:#f3d0d6;font-size:12.5px">${faltan.length} del banco no está${faltan.length===1?"":"n"} registrado${faltan.length===1?"":"s"} (${money(faltTot)}).</span></div>`;
+    if(cxFromImg) h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--amber);font-size:16px">✎</span><span style="color:#f3e6c4;font-size:12px">Estos montos vienen de una foto. Revíselos antes de agregar (puede tocarlos y corregirlos).</span></div>`;
     h+=`<div style="margin-bottom:10px"><div style="color:var(--dim);font-size:11px;margin-bottom:6px">Asignar a todos los que faltan</div>
     <div id="cxGlobalChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${cfg.personas.map((p,pi)=>`<button class="cxgchip" data-pi="${pi}" style="font-size:12px;padding:6px 12px;border-radius:999px;font-weight:600;background:${pi===cxGlobalPick?'var(--accent)':'rgba(255,255,255,.06)'};color:${pi===cxGlobalPick?'var(--acc-ink)':'var(--soft)'}">${esc(p)}</button>`).join("")}</div></div>
     <button id="cxAddAll" style="width:100%;font-weight:700;font-size:13px;padding:11px;border-radius:12px;margin-bottom:10px;background:${cxGlobalPick===null?'rgba(255,255,255,.06)':'var(--accent)'};color:${cxGlobalPick===null?'var(--dim)':'var(--acc-ink)'}">Agregar los ${faltan.length} que faltan</button>`;
   } else h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--green);font-size:18px">✓</span><span style="color:#c9f0dd;font-size:12.5px">¡Todo cuadra!</span></div>`;
   h+=res.map((r,i)=>{ const col=r.tipo==="ingreso"?"var(--green)":"var(--red)"; const sg=r.tipo==="ingreso"?"+":"-";
-    const head=`<span style="font-size:13px">${r.ok?'<span style="color:var(--green)">✓</span>':'<span style="color:var(--red)">⚠</span>'} <span style="color:${col};font-weight:700">${sg}${money(r.monto)}</span>${r.fecha?` <span style="color:var(--dim)">· ${esc(fechaLarga(r.fecha).replace(/ \d{4}$/,""))}</span>`:""}${r.desc?` <span style="color:var(--dim)">· ${esc(r.desc.slice(0,16))}</span>`:""}</span>`;
+    const editable=!r.ok && r.fromImg;
+    const amountHTML=editable
+      ? `<input type="text" inputmode="decimal" class="cxmontoedit" data-i="${i}" value="${r.monto}" style="width:82px;background:rgba(255,255,255,.07);border:1px solid var(--accbd);border-radius:8px;padding:2px 6px;color:${col};font-weight:700;font-size:13px;text-align:right;margin:0 2px">`
+      : `<span style="color:${col};font-weight:700">${money(r.monto)}</span>`;
+    const head=`<span style="font-size:13px">${r.ok?'<span style="color:var(--green)">✓</span>':'<span style="color:var(--red)">⚠</span>'} <span style="color:${col};font-weight:700">${sg}</span>${amountHTML}${r.fecha?` <span style="color:var(--dim)">· ${esc(fechaLarga(r.fecha).replace(/ \d{4}$/,""))}</span>`:""}${r.desc?` <span style="color:var(--dim)">· ${esc(r.desc.slice(0,16))}</span>`:""}</span>`;
     if(r.ok) return `<div class="cxrow">${head}<span style="color:var(--dim);font-size:11px">ya está</span></div>`;
     if(r.added){ const nombre=r.pick!==null?cfg.personas[r.pick]:""; return `<div class="cxrow">${head}<span style="color:var(--green);font-size:11px">agregado a ${esc(nombre)} ✓</span></div>`; }
     const rowPick=r.pick!==null?r.pick:cxGlobalPick;
@@ -937,6 +944,10 @@ function renderCx(){
     return row;
   }).join("");
   $("cxResult").innerHTML=h;
+  $("cxResult").querySelectorAll(".cxmontoedit").forEach(inp=>{
+    inp.onclick=e=>e.stopPropagation();
+    inp.oninput=()=>{ const r=cxRes[+inp.dataset.i]; const v=parseMonto(inp.value.replace(/[^\d.,]/g,"")); r.monto=(v&&v>0)?Math.round(v):0; };
+  });
   $("cxResult").querySelectorAll(".cxgchip").forEach(b=>b.onclick=()=>{
     cxGlobalPick=+b.dataset.pi; cxRes.forEach(r=>{ if(!r.ok&&!r.added) r.pick=null; }); renderCx();
   });
@@ -949,6 +960,7 @@ function renderCx(){
   $("cxResult").querySelectorAll(".cxadd").forEach(b=>b.onclick=async()=>{
     const r=cxRes[+b.dataset.i]; const pick=r.pick!==null?r.pick:cxGlobalPick;
     if(pick===null){ r.editing=true; renderCx(); return; }
+    if(!r.monto||r.monto<=0){ return; }
     b.disabled=true; b.textContent="…";
     await agregarFaltante(r,cfg.personas[pick]); r.ok=true; r.added=true; r.pick=pick; renderCx();
   });
@@ -956,7 +968,7 @@ function renderCx(){
   if(allBtn) allBtn.onclick=async()=>{
     if(cxGlobalPick===null) return;
     allBtn.disabled=true; allBtn.textContent="Agregando…";
-    for(const r of cxRes){ if(!r.ok){ const pick=r.pick!==null?r.pick:cxGlobalPick; await agregarFaltante(r,cfg.personas[pick]); r.ok=true; r.added=true; r.pick=pick; } }
+    for(const r of cxRes){ if(!r.ok && r.monto>0){ const pick=r.pick!==null?r.pick:cxGlobalPick; await agregarFaltante(r,cfg.personas[pick]); r.ok=true; r.added=true; r.pick=pick; } }
     renderCx();
   };
 }
