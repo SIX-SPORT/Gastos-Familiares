@@ -328,7 +328,7 @@
     </div>
     <div class="row">
       <div class="fld"><label>Categoría</label><select class="field" id="fCat"></select></div>
-      <div class="fld"><label>Monto</label><input class="field num" type="number" inputmode="decimal" id="fMonto" placeholder="0"></div>
+      <div class="fld"><label>Monto</label><input class="field num" type="text" inputmode="decimal" id="fMonto" placeholder="0"></div>
     </div>
     <div class="fld" style="margin-bottom:9px"><label>Descripción (opcional)</label><input class="field" id="fDesc" placeholder="Ej. compra semanal"></div>
     <div class="chk" id="fVerif"><span class="bx">✓</span><span>Verificado</span></div>
@@ -973,7 +973,7 @@ function renderCx(){
   };
 }
 async function saveModal(){
-  const monto=+$("fMonto").value; if(!monto||monto<=0){ $("fMonto").focus(); return; }
+  const monto=parseMonto($("fMonto").value); if(!monto||monto<=0||isNaN(monto)){ $("fMonto").focus(); return; }
   const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto:Math.abs(monto), descripcion:$("fDesc").value.trim(), verificado:mdVerif };
   if(state.editId){ const t=tx.find(x=>x.id===state.editId); Object.assign(t,obj); } else { obj.id="t"+Date.now()+Math.random().toString(36).slice(2,6); tx.push(obj); }
   await saveTx(); closeModal(); renderAll();
