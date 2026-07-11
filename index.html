@@ -332,6 +332,7 @@
     </div>
     <div class="fld" style="margin-bottom:9px"><label>Descripción (opcional)</label><input class="field" id="fDesc" placeholder="Ej. compra semanal"></div>
     <div class="chk" id="fVerif"><span class="bx">✓</span><span>Verificado</span></div>
+    <div class="fld hidden" id="fExternoWrap" style="margin-top:9px"><div class="chk" id="fExterno"><span class="bx">✓</span><span>Pagado desde otra cuenta</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Queda registrado, pero no se resta del Disponible de esta cuenta.</div></div>
     <button class="save" id="mdSave">Guardar</button>
     <button class="del hidden" id="mdDel">Borrar</button>
     <button class="cancel" id="mdCancel">Cancelar</button>
@@ -462,7 +463,7 @@ function migrateCfg(pais,raw){
 }
 
 /* ---------- estado ---------- */
-let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), diaRef:"", editId:null };
+let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", movPeriod:"dia", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), diaRef:"", editId:null };
 state.diaRef=(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-"+String(new Date().getDate()).padStart(2,"0"));
 let perOpen=false;
 let tx=[], cfg=defaultCfg("CR");
@@ -532,7 +533,7 @@ function catColor(nombre){ return catColorMap[nombre]||"#94a3b8"; }
 function catIcon(nombre){ return CATICON[nombre]||"•"; }
 
 /* Disponible acumulado (arrastra sobrante): ingresos - gastos con fecha <= corte */
-function dispAcum(corte){ let s=0; for(const t of tx){ if(t.fecha<=corte){ if(t.tipo==="ingreso")s+=(+t.monto||0); else if(t.tipo==="gasto")s-=(+t.monto||0); } } return s; }
+function dispAcum(corte){ let s=0; for(const t of tx){ if(t.fecha<=corte){ if(t.tipo==="ingreso")s+=(+t.monto||0); else if(t.tipo==="gasto"&&!t.externo)s-=(+t.monto||0); } } return s; }
 
 /* ---------- render raíz ---------- */
 function renderAll(){ buildColorMap(); buildSidebar(); if(state.view==="Panel")renderPanel(); else if(state.view==="Movimientos")renderMov(); else if(state.view==="Resumen")renderRes(); else renderSet(); }
@@ -592,7 +593,7 @@ function renderPanel(){
 
   // barra de balance: total acumulado (entró vs gastado vs queda)
   const totIng=sum(tx.filter(t=>t.tipo==="ingreso"));
-  const totGasAll=sum(tx.filter(t=>t.tipo==="gasto"));
+  const totGasAll=sum(tx.filter(t=>t.tipo==="gasto"&&!t.externo));
   const queda=totIng-totGasAll;
   if(totIng>0||totGasAll>0){
     const pg=totIng>0?Math.min(100,Math.round(totGasAll/totIng*100)):100;
@@ -710,24 +711,35 @@ function recientesCard(){
 
 /* ============================ MOVIMIENTOS ============================ */
 function renderMov(){
+  const savedP=state.period; state.period=state.movPeriod;
   let set=periodSet().slice().sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(a.id<b.id?1:-1));
   if(state.persona) set=set.filter(t=>t.quien===state.persona);
-  let h=`<div class="mtop"><div><h2>Movimientos</h2><div class="sub">${esc(periodLabel())}${state.persona?" · "+esc(state.persona):""}</div></div></div>`;
-  h+=`<div class="periods" id="mvPer">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.period===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+`</div>`;
+  const movLabel={dia:(state.diaRef===today()?"Hoy":fechaLarga(state.diaRef).replace(/ \d{4}$/,"")),semana:"Esta semana",mes:"Este mes",anio:"Este año",total:"Total"}[state.movPeriod];
+  let h=`<div class="mtop"><div><h2>Movimientos</h2><div class="sub">${esc(movLabel)}${state.persona?" · "+esc(state.persona):""}</div></div></div>`;
+  if(state.movPeriod==="dia"){
+    h+=`<div class="mnav-row"><button id="mvPrevD" aria-label="Día anterior">‹</button><button id="mvCal">📅 ${esc(state.diaRef===today()?"Hoy":fechaLarga(state.diaRef))}</button><button id="mvNextD" aria-label="Día siguiente">›</button></div>`;
+  } else {
+    h+=`<button class="cxbtn" id="mvCal" style="margin-bottom:9px">📅 Elegir fecha</button>`;
+  }
+  h+=`<div class="periods" id="mvPer">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.movPeriod===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+`</div>`;
   h+=perBlock("mm");
   h+=`<button class="cxbtn" id="mvVerif">✓ Verificar con el estado de cuenta</button>`;
-  if(!set.length){ h+=`<div class="empty" style="padding:40px 10px">🧾<br>No hay movimientos en ${esc(periodLabel().toLowerCase())}.<br>Toque <b>+</b> para agregar.</div>`; }
+  if(!set.length){ h+=`<div class="empty" style="padding:40px 10px">🧾<br>No hay movimientos en ${esc(movLabel.toLowerCase())}.<br>Toque <b>+</b> para agregar.</div>`; }
   else{ let last="";
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
       const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=t.tipo==="gasto"?"-":"+";
       h+=`<div class="tx-item" data-mv="${t.id}"><span class="mv-ic ic" style="width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:${catColor(t.categoria)}33;color:${catColor(t.categoria)};font-size:15px;flex:none">${catIcon(t.categoria)}</span>
-        <div style="flex:1;min-width:0"><div style="color:#fff;font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}</div></div>
+        <div style="flex:1;min-width:0"><div style="color:#fff;font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?' · <span style="color:var(--accent)">Otra cuenta</span>':""}</div></div>
         <span class="amt ${cls} num" style="font-size:13px">${sign}${money(t.monto)}</span>${t.verificado?'<span class="badge ok">✓</span>':'<span class="badge pend">pend.</span>'}</div>`;
     }
   }
+  state.period=savedP;
   $("viewMov").innerHTML=h;
-  $("mvPer").querySelectorAll("button").forEach(b=>b.onclick=()=>{state.period=b.dataset.p;renderMov();buildSidebar();});
+  $("mvPer").querySelectorAll("button").forEach(b=>b.onclick=()=>{state.movPeriod=b.dataset.p; if(b.dataset.p==="dia")state.diaRef=today(); renderMov();buildSidebar();});
   if($("mvVerif"))$("mvVerif").onclick=()=>openConcil();
+  if($("mvCal"))$("mvCal").onclick=()=>openPicker("mov");
+  if($("mvPrevD"))$("mvPrevD").onclick=()=>{ const d=new Date(state.diaRef+"T00:00:00"); d.setDate(d.getDate()-1); state.diaRef=ymd(d); state.mesRef=state.diaRef.slice(0,7); renderMov(); buildSidebar(); };
+  if($("mvNextD"))$("mvNextD").onclick=()=>{ const d=new Date(state.diaRef+"T00:00:00"); d.setDate(d.getDate()+1); state.diaRef=ymd(d); state.mesRef=state.diaRef.slice(0,7); renderMov(); buildSidebar(); };
   if($("mmBar"))$("mmBar").onclick=()=>{perOpen=!perOpen;renderMov();};
   if($("mmChips"))$("mmChips").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.persona=b.dataset.p;renderMov();buildSidebar();});
   $("viewMov").querySelectorAll("[data-mv]").forEach(el=>el.onclick=()=>openMov(el.dataset.mv));
@@ -805,12 +817,12 @@ function fillModalSelects(){
   fillCat();
 }
 function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros; $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join(""); }
-function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); }
-let mdVerif=false;
+function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); } }
+let mdVerif=false, mdExterno=false;
 function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden");
-  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
+  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden");
-  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fMonto").value=t.monto; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); $("modal").classList.remove("hidden"); };
+  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fMonto").value=t.monto; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
 const TIPO_DET={ingreso:{lbl:"Ingresos",col:"var(--green)",sg:"+"},gasto:{lbl:"Gastos",col:"var(--red)",sg:"-"},ahorro:{lbl:"Ahorros",col:"var(--blue)",sg:"+"}};
 window.openDetalle=tipo=>{
@@ -825,12 +837,14 @@ window.openDetalle=tipo=>{
   $("dtList").querySelectorAll("[data-mv]").forEach(el=>el.onclick=()=>{ $("detalle").classList.add("hidden"); openMov(el.dataset.mv); });
 };
 function closeDetalle(){ $("detalle").classList.add("hidden"); }
-let pkYear=null;
-window.openPicker=()=>{ pkYear=mesRefY(); $("pkDate").value=state.diaRef||today(); renderPicker(); $("picker").classList.remove("hidden"); };
+let pkYear=null; let pickerCtx="panel";
+window.openPicker=(ctx)=>{ pickerCtx=ctx||"panel"; pkYear=mesRefY(); $("pkDate").value=state.diaRef||today(); renderPicker(); $("picker").classList.remove("hidden"); };
+function curMovOrPanelPeriod(){ return pickerCtx==="mov"?state.movPeriod:state.period; }
+function pkApply(period){ if(pickerCtx==="mov"){ state.movPeriod=period; closePicker(); renderMov(); } else { state.period=period; closePicker(); renderPanel(); } buildSidebar(); }
 function renderPicker(){
   $("pkYear").textContent=pkYear;
-  $("pkMonths").innerHTML=MESL.map((m,i)=>`<button data-m="${i}" class="${(state.period==='mes'&&mesRefY()===pkYear&&mesRefM()===i)?'on':''}">${m.slice(0,3)}</button>`).join("");
-  $("pkMonths").querySelectorAll("button").forEach(b=>b.onclick=()=>{ state.mesRef=pkYear+"-"+String(+b.dataset.m+1).padStart(2,"0"); state.period="mes"; closePicker(); renderPanel(); buildSidebar(); });
+  $("pkMonths").innerHTML=MESL.map((m,i)=>`<button data-m="${i}" class="${(curMovOrPanelPeriod()==='mes'&&mesRefY()===pkYear&&mesRefM()===i)?'on':''}">${m.slice(0,3)}</button>`).join("");
+  $("pkMonths").querySelectorAll("button").forEach(b=>b.onclick=()=>{ state.mesRef=pkYear+"-"+String(+b.dataset.m+1).padStart(2,"0"); pkApply("mes"); });
 }
 function closePicker(){ $("picker").classList.add("hidden"); }
 
@@ -974,7 +988,7 @@ function renderCx(){
 }
 async function saveModal(){
   const monto=parseMonto($("fMonto").value); if(!monto||monto<=0||isNaN(monto)){ $("fMonto").focus(); return; }
-  const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto:Math.abs(monto), descripcion:$("fDesc").value.trim(), verificado:mdVerif };
+  const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto:Math.abs(monto), descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno) };
   if(state.editId){ const t=tx.find(x=>x.id===state.editId); Object.assign(t,obj); } else { obj.id="t"+Date.now()+Math.random().toString(36).slice(2,6); tx.push(obj); }
   await saveTx(); closeModal(); renderAll();
 }
@@ -996,19 +1010,20 @@ $("perHd").onclick=()=>{ const l=$("perList"); const open=l.style.display!=="non
 
 /* modal wiring */
 $("fab").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=saveModal; $("mdDel").onclick=delModal;
+$("fExterno").onclick=()=>{ mdExterno=!mdExterno; $("fExterno").classList.toggle("on",mdExterno); };
 $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",mdVerif); };
 ["gasto","ingreso","ahorro"].forEach(x=>{ $("t"+x[0].toUpperCase()+x.slice(1)).onclick=()=>setModalTipo(x); });
 $("modal").onclick=e=>{ if(e.target.id==="modal")closeModal(); };
 $("dtClose").onclick=closeDetalle; $("dtCancel").onclick=closeDetalle;
 $("detalle").onclick=e=>{ if(e.target.id==="detalle")closeDetalle(); };
 $("pkClose").onclick=closePicker; $("pkCancel").onclick=closePicker;
-$("picker").onclick=e=>{ if(e.target.id==="picker")closePicker(); };
 $("pkPrevY").onclick=()=>{ pkYear--; renderPicker(); };
 $("pkNextY").onclick=()=>{ pkYear++; renderPicker(); };
-$("pkHoy").onclick=()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); state.period="mes"; closePicker(); renderPanel(); buildSidebar(); };
-$("pkAnio").onclick=()=>{ state.mesRef=pkYear+"-01"; state.period="anio"; closePicker(); renderPanel(); buildSidebar(); };
-$("pkTotal").onclick=()=>{ state.period="total"; closePicker(); renderPanel(); buildSidebar(); };
-$("pkDate").onchange=()=>{ const v=$("pkDate").value; if(v){ state.diaRef=v; state.mesRef=v.slice(0,7); state.period="dia"; closePicker(); renderPanel(); buildSidebar(); } };
+$("pkHoy").onclick=()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); pkApply("mes"); };
+$("pkAnio").onclick=()=>{ state.mesRef=pkYear+"-01"; pkApply("anio"); };
+$("pkTotal").onclick=()=>{ pkApply("total"); };
+$("pkDate").onchange=()=>{ const v=$("pkDate").value; if(v){ state.diaRef=v; state.mesRef=v.slice(0,7); pkApply("dia"); } };
+$("picker").onclick=e=>{ if(e.target.id==="picker")closePicker(); };
 $("cxClose").onclick=closeConcil; $("cxCancel").onclick=closeConcil;
 $("concil").onclick=e=>{ if(e.target.id==="concil")closeConcil(); };
 $("cxCompare").onclick=conciliar;
