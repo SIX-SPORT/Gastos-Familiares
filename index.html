@@ -332,7 +332,13 @@
     </div>
     <div class="fld" style="margin-bottom:9px"><label>Descripción (opcional)</label><input class="field" id="fDesc" placeholder="Ej. compra semanal"></div>
     <div class="chk" id="fVerif"><span class="bx">✓</span><span>Verificado</span></div>
-    <div class="fld hidden" id="fExternoWrap" style="margin-top:9px"><div class="chk" id="fExterno"><span class="bx">✓</span><span>Pagado desde otra cuenta</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Queda registrado, pero no se resta del Disponible de esta cuenta.</div></div>
+    <div class="fld hidden" id="fExternoWrap" style="margin-top:9px"><div class="chk" id="fExterno"><span class="bx">✓</span><span>Pagado desde otra cuenta</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Queda registrado, pero no se resta del Disponible de esta cuenta.</div>
+      <div class="fld hidden" id="fExtCurWrap" style="margin-top:9px">
+        <label>Moneda del pago</label>
+        <div class="seg" id="fExtCur"><button data-c="local" class="on">₡</button><button data-c="usd">$</button></div>
+        <div id="fExtConv" style="color:var(--dim);font-size:11px;margin-top:5px"></div>
+      </div>
+    </div>
     <button class="save" id="mdSave">Guardar</button>
     <button class="del hidden" id="mdDel">Borrar</button>
     <button class="cancel" id="mdCancel">Cancelar</button>
@@ -595,6 +601,8 @@ function renderPanel(){
   const totIng=sum(tx.filter(t=>t.tipo==="ingreso"));
   const totGasAll=sum(tx.filter(t=>t.tipo==="gasto"&&!t.externo));
   const queda=totIng-totGasAll;
+  const extList=tx.filter(t=>t.tipo==="gasto"&&t.externo);
+  const totExt=sum(extList);
   if(totIng>0||totGasAll>0){
     const pg=totIng>0?Math.min(100,Math.round(totGasAll/totIng*100)):100;
     const pq=Math.max(0,100-pg);
@@ -606,6 +614,7 @@ function renderPanel(){
       </div>
       <div class="balrow"><div style="width:${pq}%;background:var(--green)"></div><div style="width:${pg}%;background:var(--red)"></div></div>
       <div style="display:flex;justify-content:space-between;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Disponible ${pq}%</span><span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
+      ${extList.length?`<div style="border-top:1px solid rgba(255,255,255,.06);margin-top:10px;padding-top:9px;display:flex;justify-content:space-between;align-items:center"><span style="color:var(--dim);font-size:11px">🏦 ${extList.length} pago${extList.length===1?"":"s"} desde otra cuenta</span><span style="color:var(--soft);font-size:11px;font-weight:700">${money(totExt)} (no incluido arriba)</span></div>`:""}
     </div>`;
   }
 
@@ -729,7 +738,7 @@ function renderMov(){
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
       const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=t.tipo==="gasto"?"-":"+";
       h+=`<div class="tx-item" data-mv="${t.id}"><span class="mv-ic ic" style="width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:${catColor(t.categoria)}33;color:${catColor(t.categoria)};font-size:15px;flex:none">${catIcon(t.categoria)}</span>
-        <div style="flex:1;min-width:0"><div style="color:#fff;font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?' · <span style="color:var(--accent)">Otra cuenta</span>':""}</div></div>
+        <div style="flex:1;min-width:0"><div style="color:#fff;font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta${t.montoUsd?" ($"+t.montoUsd.toLocaleString(CUR[state.pais].loc)+")":""}</span>`:""}</div></div>
         <span class="amt ${cls} num" style="font-size:13px">${sign}${money(t.monto)}</span>${t.verificado?'<span class="badge ok">✓</span>':'<span class="badge pend">pend.</span>'}</div>`;
     }
   }
@@ -817,12 +826,21 @@ function fillModalSelects(){
   fillCat();
 }
 function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros; $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join(""); }
-function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); } }
-let mdVerif=false, mdExterno=false;
+function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); } updateExtCurUI(); }
+let mdVerif=false, mdExterno=false, mdExtCur="local";
+function updateExtCurUI(){
+  const show=mdExterno && CUR[state.pais].usd;
+  $("fExtCurWrap").classList.toggle("hidden",!show);
+  if(!show){ mdExtCur="local"; }
+  $("fExtCur").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.c===mdExtCur));
+  const v=parseMonto($("fMonto").value);
+  $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+Math.round(v*rate()).toLocaleString(CUR[state.pais].loc)) : "";
+}
 function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden");
-  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
+  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden");
-  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fMonto").value=t.monto; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); $("modal").classList.remove("hidden"); };
+  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno);
+  mdExtCur=(t.montoUsd?"usd":"local"); $("fMonto").value=(mdExtCur==="usd"?t.montoUsd:t.monto); updateExtCurUI(); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
 const TIPO_DET={ingreso:{lbl:"Ingresos",col:"var(--green)",sg:"+"},gasto:{lbl:"Gastos",col:"var(--red)",sg:"-"},ahorro:{lbl:"Ahorros",col:"var(--blue)",sg:"+"}};
 window.openDetalle=tipo=>{
@@ -987,8 +1005,10 @@ function renderCx(){
   };
 }
 async function saveModal(){
-  const monto=parseMonto($("fMonto").value); if(!monto||monto<=0||isNaN(monto)){ $("fMonto").focus(); return; }
-  const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto:Math.abs(monto), descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno) };
+  const raw=parseMonto($("fMonto").value); if(!raw||raw<=0||isNaN(raw)){ $("fMonto").focus(); return; }
+  const usarUsd=(state.tab==="gasto"&&mdExterno&&mdExtCur==="usd"&&CUR[state.pais].usd);
+  const monto=usarUsd?Math.round(raw*rate()):Math.abs(raw);
+  const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto, descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno), montoUsd:usarUsd?Math.abs(raw):null };
   if(state.editId){ const t=tx.find(x=>x.id===state.editId); Object.assign(t,obj); } else { obj.id="t"+Date.now()+Math.random().toString(36).slice(2,6); tx.push(obj); }
   await saveTx(); closeModal(); renderAll();
 }
@@ -1010,7 +1030,9 @@ $("perHd").onclick=()=>{ const l=$("perList"); const open=l.style.display!=="non
 
 /* modal wiring */
 $("fab").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=saveModal; $("mdDel").onclick=delModal;
-$("fExterno").onclick=()=>{ mdExterno=!mdExterno; $("fExterno").classList.toggle("on",mdExterno); };
+$("fExterno").onclick=()=>{ mdExterno=!mdExterno; $("fExterno").classList.toggle("on",mdExterno); updateExtCurUI(); };
+$("fExtCur").querySelectorAll("button").forEach(b=>b.onclick=()=>{ mdExtCur=b.dataset.c; updateExtCurUI(); });
+$("fMonto").addEventListener("input",()=>{ if(mdExterno&&mdExtCur==="usd")updateExtCurUI(); });
 $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",mdVerif); };
 ["gasto","ingreso","ahorro"].forEach(x=>{ $("t"+x[0].toUpperCase()+x.slice(1)).onclick=()=>setModalTipo(x); });
 $("modal").onclick=e=>{ if(e.target.id==="modal")closeModal(); };
