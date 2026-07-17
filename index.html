@@ -1219,7 +1219,7 @@ async function leerArchivo(file,kind){
 let cxRes=[]; let cxGlobalPick=null;
 function catDefault(tipo){ const list=tipo==="ingreso"?cfg.ingresos:tipo==="ahorro"?cfg.ahorros:cfg.gastos; return list&&list[0]?list[0].n:""; }
 async function agregarFaltante(r,quien){
-  const obj={ id:"t"+Date.now()+Math.random().toString(36).slice(2,6), tipo:r.tipo, fecha:r.fecha||today(), quien:quien||"", categoria:catDefault(r.tipo), monto:Math.abs(r.monto), descripcion:(r.desc||"").trim(), verificado:true };
+  const obj={ id:"t"+Date.now()+Math.random().toString(36).slice(2,6), tipo:r.tipo, fecha:r.fecha||today(), quien:quien||"", categoria:r.cat||catDefault(r.tipo), monto:Math.abs(r.monto), descripcion:(r.desc||"").trim(), verificado:true };
   tx.push(obj); await saveTx(); renderAll();
 }
 function conciliar(){
@@ -1230,7 +1230,7 @@ function conciliar(){
   cxRes=movs.map(M=>{
     let idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto)&&(!M.fecha||t.fecha===M.fecha));
     if(idx<0&&M.fecha) idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto));
-    if(idx>=0){ usados.add(idx); return {...M,ok:true,added:false,pick:null,editing:false,fromImg:cxFromImg}; } return {...M,ok:false,added:false,pick:null,editing:false,fromImg:cxFromImg};
+    if(idx>=0){ usados.add(idx); return {...M,ok:true,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg}; } return {...M,ok:false,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg};
   });
   renderCx();
 }
@@ -1255,9 +1255,13 @@ function renderCx(){
     if(r.added){ const nombre=r.pick!==null?cfg.personas[r.pick]:""; return `<div class="cxrow">${head}<span style="color:var(--green);font-size:11px">agregado a ${esc(nombre)} ✓</span></div>`; }
     const rowPick=r.pick!==null?r.pick:cxGlobalPick;
     const label=rowPick===null?"Sin asignar":esc(cfg.personas[rowPick]);
+    const catList=(r.tipo==="ingreso"?cfg.ingresos:r.tipo==="ahorro"?cfg.ahorros:cfg.gastos).map(c=>c.n);
     let row=`<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06)"><div class="cxrow" style="border:none;padding:0 0 7px">${head}</div>
-      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:11.5px;color:${rowPick===null?'var(--amber)':'var(--soft)'}">${label}</span><button class="cxchg" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button><button class="cxadd" data-i="${i}" style="margin-left:auto;font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;background:${rowPick===null?'rgba(255,255,255,.06)':'var(--accent)'};color:${rowPick===null?'var(--dim)':'var(--acc-ink)'}">Agregar</button></div>`;
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:11.5px;color:${rowPick===null?'var(--amber)':'var(--soft)'}">${label}</span><button class="cxchg" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
+      <span style="color:var(--dim)">·</span><span style="font-size:11.5px;color:var(--soft)">${esc(r.cat||catDefault(r.tipo))}</span><button class="cxchgcat" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
+      <button class="cxadd" data-i="${i}" style="margin-left:auto;font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;background:${rowPick===null?'rgba(255,255,255,.06)':'var(--accent)'};color:${rowPick===null?'var(--dim)':'var(--acc-ink)'}">Agregar</button></div>`;
     if(r.editing) row+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${cfg.personas.map((p,pi)=>`<button class="cxrpick" data-i="${i}" data-pi="${pi}" style="font-size:11px;padding:4px 9px;border-radius:999px;font-weight:600;background:${pi===rowPick?'var(--accbg)':'rgba(255,255,255,.05)'};color:${pi===rowPick?'#e9e5f5':'var(--dim)'};border:1px solid ${pi===rowPick?'var(--accbd)':'transparent'}">${esc(p)}</button>`).join("")}</div>`;
+    if(r.editingCat) row+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${catList.map(c=>`<button class="cxcpick" data-i="${i}" data-c="${esc(c)}" style="font-size:11px;padding:4px 9px;border-radius:999px;font-weight:600;background:${c===r.cat?'var(--accbg)':'rgba(255,255,255,.05)'};color:${c===r.cat?'#e9e5f5':'var(--dim)'};border:1px solid ${c===r.cat?'var(--accbd)':'transparent'}">${esc(c)}</button>`).join("")}</div>`;
     row+=`</div>`;
     return row;
   }).join("");
@@ -1270,10 +1274,16 @@ function renderCx(){
     cxGlobalPick=+b.dataset.pi; cxRes.forEach(r=>{ if(!r.ok&&!r.added) r.pick=null; }); renderCx();
   });
   $("cxResult").querySelectorAll(".cxchg").forEach(b=>b.onclick=()=>{
-    const r=cxRes[+b.dataset.i]; r.editing=!r.editing; renderCx();
+    const r=cxRes[+b.dataset.i]; r.editing=!r.editing; r.editingCat=false; renderCx();
+  });
+  $("cxResult").querySelectorAll(".cxchgcat").forEach(b=>b.onclick=()=>{
+    const r=cxRes[+b.dataset.i]; r.editingCat=!r.editingCat; r.editing=false; renderCx();
   });
   $("cxResult").querySelectorAll(".cxrpick").forEach(b=>b.onclick=()=>{
     const r=cxRes[+b.dataset.i]; r.pick=+b.dataset.pi; r.editing=false; renderCx();
+  });
+  $("cxResult").querySelectorAll(".cxcpick").forEach(b=>b.onclick=()=>{
+    const r=cxRes[+b.dataset.i]; r.cat=b.dataset.c; r.editingCat=false; renderCx();
   });
   $("cxResult").querySelectorAll(".cxadd").forEach(b=>b.onclick=async()=>{
     const r=cxRes[+b.dataset.i]; const pick=r.pick!==null?r.pick:cxGlobalPick;
