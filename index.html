@@ -437,8 +437,8 @@ function lastDayOfMonth(y,m){ return new Date(y,m+1,0).getDate(); } // m 0-based
 
 /* ---------- países / monedas ---------- */
 const CUR = {
-  CR:{sym:"₡",code:"CRC",loc:"es-CR",dec:0,col:"hogar",usd:true,name:"Costa Rica",tc:520},
-  NI:{sym:"C$",code:"NIO",loc:"es-NI",dec:0,col:"hogar_ni",usd:true,name:"Nicaragua",tc:36.8},
+  CR:{sym:"₡",code:"CRC",loc:"es-CR",dec:2,col:"hogar",usd:true,name:"Costa Rica",tc:520},
+  NI:{sym:"C$",code:"NIO",loc:"es-NI",dec:2,col:"hogar_ni",usd:true,name:"Nicaragua",tc:36.8},
   ES:{sym:"€",code:"EUR",loc:"es-ES",dec:2,col:"hogar_es",usd:false,name:"España",tc:1}
 };
 const PAL=["#8b5cf6","#f472b6","#60a5fa","#fbbf24","#fb7185","#22d3ee","#f59e0b","#34d399","#c084fc","#a78bfa","#4ade80","#94a3b8"];
@@ -552,7 +552,7 @@ async function fetchTipoCambio(){
 
 /* ---------- dinero ---------- */
 let _fmt=null,_fmtKey="";
-function fmtLocal(){ const c=CUR[state.pais]; const k=c.code; if(_fmtKey!==k){ _fmt=new Intl.NumberFormat(c.loc,{style:"currency",currency:c.code,maximumFractionDigits:c.dec}); _fmtKey=k; } return _fmt; }
+function fmtLocal(){ const c=CUR[state.pais]; const k=c.code; if(_fmtKey!==k){ _fmt=new Intl.NumberFormat(c.loc,{style:"currency",currency:c.code,minimumFractionDigits:c.dec,maximumFractionDigits:c.dec}); _fmtKey=k; } return _fmt; }
 const usdFmt=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0});
 function rate(){ return (cfg.tc&&cfg.tc>0)?cfg.tc:1; }
 function money(v){ v=v||0; if(state.verUSD && CUR[state.pais].usd){ const neg=v<0; return (neg?"-":"")+usdFmt.format(Math.round(Math.abs(v)/rate())); }
@@ -799,7 +799,7 @@ function renderMov(){
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
       const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=t.tipo==="gasto"?"-":"+";
       h+=`<div class="tx-item" data-mv="${t.id}"><span class="mv-ic ic" style="width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:${catColor(t.categoria)}33;color:${catColor(t.categoria)};font-size:15px;flex:none">${catIcon(t.categoria)}</span>
-        <div style="flex:1;min-width:0"><div style="color:#fff;font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta${t.montoUsd?" ($"+t.montoUsd.toLocaleString(CUR[state.pais].loc)+")":""}</span>`:""}</div></div>
+        <div style="flex:1;min-width:0"><div style="color:#fff;font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta${t.montoUsd?" ($"+t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})+")":""}</span>`:""}</div></div>
         <span class="amt ${cls} num" style="font-size:13px">${sign}${money(t.monto)}</span>${t.verificado?'<span class="badge ok">✓</span>':'<span class="badge pend">pend.</span>'}</div>`;
     }
   }
@@ -922,7 +922,7 @@ function inmCardHtml(inm,key){
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">1. Ingreso — Alquiler mensual</div>`;
     h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:10px;margin-bottom:16px">`;
     if(usdPais) h+=`<div style="margin-bottom:8px">${monedaSeg("inmalqmon",inm.id,null,m.alquiler.moneda)}</div>`;
-    h+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmalq="${inm.id}" value="${m.alquiler.monto||""}" placeholder="0">`;
+    h+=`<input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmalq="${inm.id}" value="${m.alquiler.monto||""}" placeholder="0">`;
     if(usdPais&&m.alquiler.moneda==="usd"){
       const tcUsado=m.alquiler.tc||cfg.tc||1;
       h+=`<div style="color:var(--dim);font-size:11px;margin-top:6px">≈ ${money(alqLocal)} · tipo de cambio ${CUR[state.pais].sym}${tcUsado} usado ese mes</div>`;
@@ -941,7 +941,7 @@ function inmCardHtml(inm,key){
       </div>`;
       row+=`<div style="display:flex;align-items:center;gap:8px">`;
       if(usdPais) row+=monedaSeg("inmgmon",inm.id,i,g.moneda);
-      row+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${g.monto||""}" placeholder="0" style="flex:1;min-width:0;padding:8px 10px">`;
+      row+=`<input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${g.monto||""}" placeholder="0" style="flex:1;min-width:0;padding:8px 10px">`;
       row+=`</div>`;
       if(usdPais&&g.moneda==="usd"){
         const tcUsado=g.tc||cfg.tc||1;
@@ -1056,15 +1056,15 @@ function renderSet(){
   if(CUR[state.pais].usd){
     const tcEstado = cfg.tcFecha===today() ? "Actualizado hoy" : (cfg.tcFecha?`Última actualización: ${fechaLarga(cfg.tcFecha)}`:"Aún no se ha actualizado");
     h+=`<label style="color:var(--muted);font-size:11px;margin-left:2px">Tipo de cambio (1 USD = ${CUR[state.pais].sym} …)</label>
-      <input class="field num" id="setTc" type="number" inputmode="decimal" value="${cfg.tc}" style="margin-bottom:6px">
+      <input class="field num" id="setTc" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.tc}" style="margin-bottom:6px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px">
         <span style="color:var(--dim);font-size:11px" id="setTcEstado">${esc(tcEstado)}</span>
         <span id="setTcNow" style="color:#c9b8ff;font-size:11px;font-weight:700;cursor:pointer">Actualizar ahora</span>
       </div>
       <div class="chk ${cfg.tcAuto!==false?'on':''}" id="setTcAuto" style="margin-bottom:9px"><span class="bx">✓</span><span>Actualizar automáticamente cada día</span></div>`;
   }
-  h+=`<div class="row" style="display:flex;gap:8px"><div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Presupuesto mensual</label><input class="field num" id="setPre" type="number" inputmode="decimal" value="${cfg.presupuesto||""}" placeholder="0"></div>
-    <div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Meta de ahorro</label><input class="field num" id="setMeta" type="number" inputmode="decimal" value="${cfg.meta||""}" placeholder="0"></div></div>
+  h+=`<div class="row" style="display:flex;gap:8px"><div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Presupuesto mensual</label><input class="field num" id="setPre" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.presupuesto||""}" placeholder="0"></div>
+    <div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Meta de ahorro</label><input class="field num" id="setMeta" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.meta||""}" placeholder="0"></div></div>
     <div class="set-add" id="setSaveGen">Guardar general</div></div>`;
 
   h+=setListSection("Categorías de gasto","gastos");
@@ -1120,7 +1120,7 @@ function updateExtCurUI(){
   if(!show){ mdExtCur="local"; }
   $("fExtCur").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.c===mdExtCur));
   const v=parseMonto($("fMonto").value);
-  $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+Math.round(v*rate()).toLocaleString(CUR[state.pais].loc)) : "";
+  $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+(Math.round(v*rate()*100)/100).toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})) : "";
 }
 function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden");
   setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
@@ -1168,7 +1168,7 @@ function parseLineaBanco(line){
   const nums=rest.replace(/[^\d.,\s]/g," ").trim().split(/\s+/).filter(Boolean);
   if(!nums.length) return null;
   const numStr=nums.sort((a,b)=>b.replace(/\D/g,"").length-a.replace(/\D/g,"").length)[0];
-  const monto=Math.round(parseMonto(numStr));
+  const monto=Math.round(parseMonto(numStr)*100)/100;
   if(!monto||isNaN(monto)||monto<=0) return null;
   return {fecha, monto, tipo:"gasto"};
 }
@@ -1178,7 +1178,7 @@ function parseEstado(text){
     const dm=ln.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
     if(dm){ let d=+dm[1],mo=+dm[2],y=+dm[3]; if(y<100)y+=2000; if(d>=1&&d<=31&&mo>=1&&mo<=12){ lastDate=y+"-"+pad2(mo)+"-"+pad2(d); } continue; }
     let m=ln.match(/([+\-])[^\d\n]{0,4}(\d[\d.,]*[.,]\d{2})/); if(!m) m=ln.match(/[₡¢C€$(]\s*(\d[\d.,]*[.,]\d{2})/);
-    if(m){ let sign="-",num; if(m[2]!==undefined){ sign=m[1]; num=m[2]; } else num=m[1]; const monto=Math.round(parseMonto(num)); if(monto>0) movs.push({fecha:lastDate, monto, tipo: sign==="+"?"ingreso":"gasto", desc:lastDesc}); lastDesc=""; descSet=false; continue; }
+    if(m){ let sign="-",num; if(m[2]!==undefined){ sign=m[1]; num=m[2]; } else num=m[1]; const monto=Math.round(parseMonto(num)*100)/100; if(monto>0) movs.push({fecha:lastDate, monto, tipo: sign==="+"?"ingreso":"gasto", desc:lastDesc}); lastDesc=""; descSet=false; continue; }
     const t=ln.trim(); if(!descSet && t && !/^[\d\s:.\-apm]+$/i.test(t)){ lastDesc=t; descSet=true; }
   }
   return movs;
@@ -1264,7 +1264,7 @@ function renderCx(){
   $("cxResult").innerHTML=h;
   $("cxResult").querySelectorAll(".cxmontoedit").forEach(inp=>{
     inp.onclick=e=>e.stopPropagation();
-    inp.oninput=()=>{ const r=cxRes[+inp.dataset.i]; const v=parseMonto(inp.value.replace(/[^\d.,]/g,"")); r.monto=(v&&v>0)?Math.round(v):0; };
+    inp.oninput=()=>{ const r=cxRes[+inp.dataset.i]; const v=parseMonto(inp.value.replace(/[^\d.,]/g,"")); r.monto=(v&&v>0)?Math.round(v*100)/100:0; };
   });
   $("cxResult").querySelectorAll(".cxgchip").forEach(b=>b.onclick=()=>{
     cxGlobalPick=+b.dataset.pi; cxRes.forEach(r=>{ if(!r.ok&&!r.added) r.pick=null; }); renderCx();
@@ -1293,7 +1293,7 @@ function renderCx(){
 async function saveModal(){
   const raw=parseMonto($("fMonto").value); if(!raw||raw<=0||isNaN(raw)){ $("fMonto").focus(); return; }
   const usarUsd=(state.tab==="gasto"&&mdExterno&&mdExtCur==="usd"&&CUR[state.pais].usd);
-  const monto=usarUsd?Math.round(raw*rate()):Math.abs(raw);
+  const monto=usarUsd?Math.round(raw*rate()*100)/100:Math.abs(raw);
   const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto, descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno), montoUsd:usarUsd?Math.abs(raw):null };
   if(state.editId){ const t=tx.find(x=>x.id===state.editId); Object.assign(t,obj); } else { obj.id="t"+Date.now()+Math.random().toString(36).slice(2,6); tx.push(obj); }
   await saveTx(); closeModal(); renderAll();
