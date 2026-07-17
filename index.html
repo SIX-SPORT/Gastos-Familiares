@@ -928,7 +928,8 @@ function inmCardHtml(inm,key){
       <span style="color:var(--muted);font-size:12px">Neto de ${esc(imLabel().toLowerCase())}</span>
       <span class="num" style="font-weight:800;font-size:15px;color:${neto>=0?'var(--green)':'var(--red)'}">${money(neto)}</span>
     </div>`;
-    h+=`<button data-inmdel="${inm.id}" style="width:100%;background:rgba(251,113,133,.12);color:var(--red);font-weight:700;border-radius:12px;padding:12px;font-size:14px;margin-top:14px">Borrar inmueble</button>`;
+    h+=`<button data-inmsave="${inm.id}" style="width:100%;background:var(--accent2);color:#fff;font-weight:700;border-radius:12px;padding:13px;font-size:15px;margin-top:16px">Guardar</button>`;
+    h+=`<button data-inmdel="${inm.id}" style="width:100%;background:rgba(251,113,133,.12);color:var(--red);font-weight:700;border-radius:12px;padding:12px;font-size:14px;margin-top:8px">Borrar inmueble</button>`;
     h+=`</div>`;
   }
   h+=`</div>`;
@@ -989,6 +990,10 @@ function wireInm(key){
   v.querySelectorAll("[data-inmaddcat]").forEach(b=>b.onclick=async()=>{
     const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmaddcat); if(!inm)return;
     inm.catGastos.push("Nuevo gasto"); await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmsave]").forEach(b=>b.onclick=async()=>{
+    await saveCfg(); flashSaved(b);
   });
 
   v.querySelectorAll("[data-inmdel]").forEach(b=>b.onclick=async()=>{
