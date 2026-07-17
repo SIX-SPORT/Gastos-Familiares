@@ -455,17 +455,16 @@ function defaultCfg(pais){
     ahorros:["Ahorro","Emergencia"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
     inmuebles:[] };
 }
+function normMoneda(v){ return v==="usd"?"usd":"local"; }
+function normMontoMoneda(raw){
+  if(raw&&typeof raw==="object") return { monto:Math.max(0,+raw.monto||0), moneda:normMoneda(raw.moneda), tc:Math.max(0,+raw.tc||0) };
+  return { monto:Math.max(0,+raw||0), moneda:"local", tc:0 };
+}
 function normInmMes(raw,catLen){
   const r=raw||{};
-  const gastos=Array.isArray(r.gastos)?r.gastos.map(v=>Math.max(0,+v||0)):[];
-  while(gastos.length<catLen) gastos.push(0);
-  let alquiler;
-  if(r.alquiler && typeof r.alquiler==="object"){
-    alquiler={ monto:Math.max(0,+r.alquiler.monto||0), moneda:(r.alquiler.moneda==="usd"?"usd":"local"), tc:Math.max(0,+r.alquiler.tc||0) };
-  } else {
-    alquiler={ monto:Math.max(0,+r.alquiler||0), moneda:"local", tc:0 };
-  }
-  return { alquiler, gastos };
+  const gastosRaw=Array.isArray(r.gastos)?r.gastos:[];
+  const gastos=[]; for(let i=0;i<catLen;i++) gastos.push(normMontoMoneda(gastosRaw[i]));
+  return { alquiler:normMontoMoneda(r.alquiler), gastos };
 }
 function normInmueble(x){
   const catGastos=(Array.isArray(x.catGastos)&&x.catGastos.length)?x.catGastos.map(c=>String(c||"").trim()||"Gasto"):DEFGI.slice();
@@ -511,7 +510,7 @@ try{ fbApp=initializeApp(window.FIREBASE_CONFIG); auth=getAuth(fbApp); db=getFir
 
 function refsFor(pais){ const col=CUR[pais].col; txRef=doc(db,col,"tx"); cfgRef=doc(db,col,"config"); }
 async function saveTx(){ try{ await setDoc(txRef,{items:tx}); }catch(e){ console.warn(e); } }
-async function saveCfg(){ try{ await setDoc(cfgRef,cfg); }catch(e){ console.warn(e); } }
+async function saveCfg(){ try{ await setDoc(cfgRef,cfg); return true; }catch(e){ console.warn(e); return false; } }
 
 function startSync(){
   if(unsubTx)unsubTx(); if(unsubCfg)unsubCfg();
@@ -849,14 +848,19 @@ function imM(){ return +state.inmMes.slice(5,7)-1; }
 function imLabel(){ return MESL[imM()]+" "+imY(); }
 function imIsCurrent(){ const d=new Date(); return state.inmMes===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")); }
 function imShift(delta){ const dt=new Date(imY(),imM()+delta,1); state.inmMes=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0"); }
+
 function mesData(inm,key){
-  const norm=normInmMes(inm.meses?inm.meses[key]:null, inm.catGastos.length);
+  const raw=inm.meses?inm.meses[key]:null;
+  const r=raw||{};
+  const gastosRaw=Array.isArray(r.gastos)?r.gastos:[];
+  const gastos=inm.catGastos.map((_,i)=>normMontoMoneda(gastosRaw[i]));
+  const norm={ alquiler:normMontoMoneda(r.alquiler), gastos };
   if(!inm.meses) inm.meses={};
   inm.meses[key]=norm;
   return norm;
 }
-function alquilerLocal(m){ return m.alquiler.moneda==="usd" ? m.alquiler.monto*(m.alquiler.tc||cfg.tc||1) : m.alquiler.monto; }
-function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0); const alq=alquilerLocal(m); return { alquiler:alq, gastos:gTot, neto:alq-gTot }; }
+function montoLocal(x){ return x.moneda==="usd" ? x.monto*(x.tc||cfg.tc||1) : x.monto; }
+function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,g)=>a+montoLocal(g),0); const alq=montoLocal(m.alquiler); return { alquiler:alq, gastos:gTot, neto:alq-gTot }; }
 
 function renderInm(){
   const key=state.inmMes;
@@ -883,10 +887,19 @@ function renderInm(){
   wireInm(key);
 }
 
+function monedaSeg(kind,id,i,moneda){
+  const sym=CUR[state.pais].sym;
+  const attrI = (i!==null&&i!==undefined) ? ` data-i="${i}"` : "";
+  return `<div class="seg" data-${kind}="${id}"${attrI} style="width:fit-content">
+    <button data-c="local" class="${moneda==='local'?'on':''}">${sym}</button>
+    <button data-c="usd" class="${moneda==='usd'?'on':''}">$</button>
+  </div>`;
+}
+
 function inmCardHtml(inm,key){
   const m=mesData(inm,key);
-  const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0);
-  const alqLocal=alquilerLocal(m);
+  const gTot=m.gastos.reduce((a,g)=>a+montoLocal(g),0);
+  const alqLocal=montoLocal(m.alquiler);
   const neto=alqLocal-gTot;
   const open=state.inmOpen===inm.id;
   const usdPais=CUR[state.pais].usd;
@@ -907,21 +920,36 @@ function inmCardHtml(inm,key){
     h+=`<input class="field" data-inmnombre="${inm.id}" value="${esc(inm.nombre)}" style="margin-bottom:14px">`;
 
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">1. Ingreso — Alquiler mensual</div>`;
-    if(usdPais){
-      h+=`<div class="seg" data-inmalqmon="${inm.id}" style="margin-bottom:8px;width:fit-content">
-        <button data-c="local" class="${m.alquiler.moneda==='local'?'on':''}">${CUR[state.pais].sym}</button>
-        <button data-c="usd" class="${m.alquiler.moneda==='usd'?'on':''}">$</button>
-      </div>`;
-    }
+    h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:10px;margin-bottom:16px">`;
+    if(usdPais) h+=`<div style="margin-bottom:8px">${monedaSeg("inmalqmon",inm.id,null,m.alquiler.moneda)}</div>`;
     h+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmalq="${inm.id}" value="${m.alquiler.monto||""}" placeholder="0">`;
     if(usdPais&&m.alquiler.moneda==="usd"){
       const tcUsado=m.alquiler.tc||cfg.tc||1;
       h+=`<div style="color:var(--dim);font-size:11px;margin-top:6px">≈ ${money(alqLocal)} · tipo de cambio ${CUR[state.pais].sym}${tcUsado} usado ese mes</div>`;
     }
-    h+=`<div style="margin-bottom:16px"></div>`;
+    h+=`</div>`;
 
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos</div>`;
-    h+=inm.catGastos.map((cat,i)=>`<div class="set-row"><span class="cdot" style="background:${PAL[i%PAL.length]}"></span><input data-inmcat="${inm.id}" data-i="${i}" value="${esc(cat)}" style="flex:1.4"><input class="field num" type="number" inputmode="decimal" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${m.gastos[i]||""}" placeholder="0" style="max-width:108px;padding:8px 10px"><span class="x" data-inmdelcat="${inm.id}" data-i="${i}">✕</span></div>`).join("");
+    h+=inm.catGastos.map((cat,i)=>{
+      const g=m.gastos[i];
+      const gLocal=montoLocal(g);
+      let row=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:9px 10px;margin-bottom:8px">`;
+      row+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span class="cdot" style="width:11px;height:11px;border-radius:50%;background:${PAL[i%PAL.length]};flex:none;display:inline-block"></span>
+        <input data-inmcat="${inm.id}" data-i="${i}" value="${esc(cat)}" style="flex:1;min-width:0;background:transparent;border:none;color:var(--ink);font-size:13.5px;font-weight:600">
+        <span class="x" data-inmdelcat="${inm.id}" data-i="${i}" style="color:var(--red);font-size:13px;padding:2px 4px;cursor:pointer;font-weight:700">✕</span>
+      </div>`;
+      row+=`<div style="display:flex;align-items:center;gap:8px">`;
+      if(usdPais) row+=monedaSeg("inmgmon",inm.id,i,g.moneda);
+      row+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${g.monto||""}" placeholder="0" style="flex:1;min-width:0;padding:8px 10px">`;
+      row+=`</div>`;
+      if(usdPais&&g.moneda==="usd"){
+        const tcUsado=g.tc||cfg.tc||1;
+        row+=`<div style="color:var(--dim);font-size:10.5px;margin-top:6px">≈ ${money(gLocal)} · tipo de cambio ${CUR[state.pais].sym}${tcUsado} usado ese mes</div>`;
+      }
+      row+=`</div>`;
+      return row;
+    }).join("");
     h+=`<div class="set-add" data-inmaddcat="${inm.id}">+ Agregar gasto</div>`;
 
     h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
@@ -949,33 +977,44 @@ function wireInm(key){
 
   v.querySelectorAll("[data-inmhead]").forEach(el=>el.onclick=()=>{ const id=el.dataset.inmhead; state.inmOpen=(state.inmOpen===id)?null:id; renderInm(); });
 
-  v.querySelectorAll("[data-inmnombre]").forEach(inp=>inp.onchange=async()=>{
+  v.querySelectorAll("[data-inmnombre]").forEach(inp=>inp.onchange=()=>{
     const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmnombre); if(!inm)return;
-    inm.nombre=inp.value.trim()||"Inmueble"; await saveCfg(); renderInm();
+    inm.nombre=inp.value.trim()||"Inmueble"; renderInm();
   });
 
-  v.querySelectorAll("[data-inmalqmon]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+  v.querySelectorAll("[data-inmalqmon]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{
     const inm=cfg.inmuebles.find(x=>x.id===seg.dataset.inmalqmon); if(!inm)return;
-    const m=mesData(inm,key); m.alquiler.moneda=b.dataset.c==="usd"?"usd":"local";
+    const m=mesData(inm,key); m.alquiler.moneda=normMoneda(b.dataset.c);
     if(m.alquiler.moneda==="usd") m.alquiler.tc=cfg.tc||m.alquiler.tc||1;
-    await saveCfg(); renderInm();
+    renderInm();
   }));
 
-  v.querySelectorAll("[data-inmalq]").forEach(inp=>inp.onchange=async()=>{
+  v.querySelectorAll("[data-inmalq]").forEach(inp=>inp.onchange=()=>{
     const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmalq); if(!inm)return;
     const m=mesData(inm,key); m.alquiler.monto=Math.max(0,+inp.value||0);
     if(m.alquiler.moneda==="usd") m.alquiler.tc=cfg.tc||m.alquiler.tc||1;
-    await saveCfg(); renderInm();
+    renderInm();
   });
 
-  v.querySelectorAll("[data-inmgasto]").forEach(inp=>inp.onchange=async()=>{
+  v.querySelectorAll("[data-inmgmon]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===seg.dataset.inmgmon); if(!inm)return;
+    const i=+seg.dataset.i; const m=mesData(inm,key); const g=m.gastos[i]; if(!g)return;
+    g.moneda=normMoneda(b.dataset.c);
+    if(g.moneda==="usd") g.tc=cfg.tc||g.tc||1;
+    renderInm();
+  }));
+
+  v.querySelectorAll("[data-inmgasto]").forEach(inp=>inp.onchange=()=>{
     const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmgasto); if(!inm)return;
-    const i=+inp.dataset.i; const m=mesData(inm,key); m.gastos[i]=Math.max(0,+inp.value||0); await saveCfg(); renderInm();
+    const i=+inp.dataset.i; const m=mesData(inm,key); const g=m.gastos[i]; if(!g)return;
+    g.monto=Math.max(0,+inp.value||0);
+    if(g.moneda==="usd") g.tc=cfg.tc||g.tc||1;
+    renderInm();
   });
 
-  v.querySelectorAll("[data-inmcat]").forEach(inp=>inp.onchange=async()=>{
+  v.querySelectorAll("[data-inmcat]").forEach(inp=>inp.onchange=()=>{
     const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmcat); if(!inm)return;
-    const i=+inp.dataset.i; inm.catGastos[i]=inp.value.trim()||inm.catGastos[i]; await saveCfg(); renderInm();
+    const i=+inp.dataset.i; inm.catGastos[i]=inp.value.trim()||inm.catGastos[i]; renderInm();
   });
 
   v.querySelectorAll("[data-inmdelcat]").forEach(b=>b.onclick=async()=>{
@@ -993,7 +1032,10 @@ function wireInm(key){
   });
 
   v.querySelectorAll("[data-inmsave]").forEach(b=>b.onclick=async()=>{
-    await saveCfg(); flashSaved(b);
+    b.textContent="Guardando…"; b.disabled=true;
+    const ok=await saveCfg();
+    if(ok!==false){ showToast("Guardado ✓"); state.inmOpen=null; renderInm(); }
+    else { b.textContent="Guardar"; b.disabled=false; alert("No se pudo guardar. Revise su conexión e intente de nuevo."); }
   });
 
   v.querySelectorAll("[data-inmdel]").forEach(b=>b.onclick=async()=>{
@@ -1054,6 +1096,15 @@ function wireListSection(key){
   const add=$("viewSet").querySelector(`[data-addk="${key}"]`); if(add)add.onclick=async()=>{ cfg[key].push({n:"Nueva",c:PAL[cfg[key].length%PAL.length]}); await saveCfg(); renderSet(); };
 }
 function flashSaved(el){ const t=el.textContent; el.textContent="Guardado ✓"; setTimeout(()=>el.textContent=t,1200); }
+function showToast(msg){
+  let t=document.getElementById("toastMsg");
+  if(!t){ t=document.createElement("div"); t.id="toastMsg";
+    t.style.cssText="position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#1a1428;border:1px solid #2b2544;color:#fff;padding:11px 20px;border-radius:999px;font-size:13px;font-weight:700;z-index:999;opacity:0;transition:opacity .25s;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.4)";
+    document.body.appendChild(t);
+  }
+  t.textContent=msg; t.style.opacity="1";
+  clearTimeout(t._to); t._to=setTimeout(()=>{ t.style.opacity="0"; },1600);
+}
 
 /* ============================ MODAL ============================ */
 function fillModalSelects(){
