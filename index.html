@@ -448,7 +448,7 @@ const CATICON={Supermercado:"🛒","Cable/Internet":"📶",Colegio:"🎓",Gasoli
 const DEFGI=["Impuesto de sociedad","Mantenimiento","Municipalidad","IVA"];
 function uid(){ return "im"+Date.now()+Math.random().toString(36).slice(2,6); }
 function defaultCfg(pais){
-  return { hogar:"Nuestro hogar", tc:CUR[pais].tc, meta:0, presupuesto:0,
+  return { hogar:"Nuestro hogar", tc:CUR[pais].tc, tcAuto:true, tcFecha:"", meta:0, presupuesto:0,
     personas:["Mamá","Papá","Hijo"],
     gastos:DEFG.map((n,i)=>({n,c:PAL[i%PAL.length]})),
     ingresos:["Salario","Extra","Otro"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
@@ -459,7 +459,13 @@ function normInmMes(raw,catLen){
   const r=raw||{};
   const gastos=Array.isArray(r.gastos)?r.gastos.map(v=>Math.max(0,+v||0)):[];
   while(gastos.length<catLen) gastos.push(0);
-  return { alquiler:Math.max(0,+r.alquiler||0), gastos };
+  let alquiler;
+  if(r.alquiler && typeof r.alquiler==="object"){
+    alquiler={ monto:Math.max(0,+r.alquiler.monto||0), moneda:(r.alquiler.moneda==="usd"?"usd":"local"), tc:Math.max(0,+r.alquiler.tc||0) };
+  } else {
+    alquiler={ monto:Math.max(0,+r.alquiler||0), moneda:"local", tc:0 };
+  }
+  return { alquiler, gastos };
 }
 function normInmueble(x){
   const catGastos=(Array.isArray(x.catGastos)&&x.catGastos.length)?x.catGastos.map(c=>String(c||"").trim()||"Gasto"):DEFGI.slice();
@@ -480,6 +486,8 @@ function migrateCfg(pais,raw){
   return {
     hogar: raw.hogar || d.hogar,
     tc: (typeof raw.tc==="number"&&raw.tc>0)?raw.tc:(typeof raw.tipoCambio==="number"&&raw.tipoCambio>0?raw.tipoCambio:d.tc),
+    tcAuto: typeof raw.tcAuto==="boolean"?raw.tcAuto:true,
+    tcFecha: typeof raw.tcFecha==="string"?raw.tcFecha:"",
     meta: typeof raw.meta==="number"?raw.meta:0,
     presupuesto: typeof raw.presupuesto==="number"?raw.presupuesto:0,
     personas: (Array.isArray(raw.personas)&&raw.personas.length)?raw.personas.slice():d.personas,
@@ -513,7 +521,34 @@ function startSync(){
     if(s.exists()){ cfg=migrateCfg(state.pais,s.data()); }
     else { cfg=defaultCfg(state.pais); if(firstCfg) setDoc(cfgRef,cfg).catch(()=>{}); }
     firstCfg=false; buildSidebar(); renderAll();
+    checkTipoCambioDiario(state.pais);
   }, e=>console.warn(e));
+}
+
+/* ---------- tipo de cambio automático (diario) ---------- */
+let tcFetching=false;
+async function checkTipoCambioDiario(pais){
+  if(pais!==state.pais) return;
+  const c=CUR[pais]; if(!c.usd) return;
+  if(cfg.tcAuto===false) return;
+  if(cfg.tcFecha===today()) return;
+  await fetchTipoCambio();
+}
+async function fetchTipoCambio(){
+  const pais=state.pais; const c=CUR[pais]; if(!c.usd||tcFetching) return false;
+  tcFetching=true;
+  try{
+    const res=await fetch("https://open.er-api.com/v6/latest/USD");
+    const data=await res.json();
+    const rate=data&&data.rates?data.rates[c.code]:null;
+    if(rate&&rate>0&&pais===state.pais){
+      cfg.tc=Math.round(rate*100)/100; cfg.tcFecha=today();
+      await saveCfg();
+      if(state.view==="Ajustes")renderSet(); else buildSidebar();
+      tcFetching=false; return true;
+    }
+  }catch(e){ console.warn("Tipo de cambio:",e); }
+  tcFetching=false; return false;
 }
 
 /* ---------- dinero ---------- */
@@ -815,14 +850,13 @@ function imLabel(){ return MESL[imM()]+" "+imY(); }
 function imIsCurrent(){ const d=new Date(); return state.inmMes===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")); }
 function imShift(delta){ const dt=new Date(imY(),imM()+delta,1); state.inmMes=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0"); }
 function mesData(inm,key){
+  const norm=normInmMes(inm.meses?inm.meses[key]:null, inm.catGastos.length);
   if(!inm.meses) inm.meses={};
-  const raw=inm.meses[key]||{};
-  const gastos=inm.catGastos.map((_,i)=> typeof raw.gastos?.[i]==="number"?raw.gastos[i]:Math.max(0,+raw.gastos?.[i]||0));
-  const m={ alquiler:Math.max(0,+raw.alquiler||0), gastos };
-  inm.meses[key]=m;
-  return m;
+  inm.meses[key]=norm;
+  return norm;
 }
-function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0); return { alquiler:m.alquiler, gastos:gTot, neto:m.alquiler-gTot }; }
+function alquilerLocal(m){ return m.alquiler.moneda==="usd" ? m.alquiler.monto*(m.alquiler.tc||cfg.tc||1) : m.alquiler.monto; }
+function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0); const alq=alquilerLocal(m); return { alquiler:alq, gastos:gTot, neto:alq-gTot }; }
 
 function renderInm(){
   const key=state.inmMes;
@@ -852,13 +886,15 @@ function renderInm(){
 function inmCardHtml(inm,key){
   const m=mesData(inm,key);
   const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0);
-  const neto=(+m.alquiler||0)-gTot;
+  const alqLocal=alquilerLocal(m);
+  const neto=alqLocal-gTot;
   const open=state.inmOpen===inm.id;
+  const usdPais=CUR[state.pais].usd;
   let h=`<div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">`;
   h+=`<div data-inmhead="${inm.id}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px;cursor:pointer">
     <div style="min-width:0">
       <div style="color:#fff;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inm.nombre)}</div>
-      <div style="color:var(--dim);font-size:11px;margin-top:2px">Alquiler ${money(m.alquiler)} · Gastos ${money(gTot)}</div>
+      <div style="color:var(--dim);font-size:11px;margin-top:2px">Alquiler ${money(alqLocal)} · Gastos ${money(gTot)}</div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex:none">
       <span class="num" style="font-weight:800;font-size:14px;color:${neto>=0?'var(--green)':'var(--red)'}">${money(neto)}</span>
@@ -871,7 +907,18 @@ function inmCardHtml(inm,key){
     h+=`<input class="field" data-inmnombre="${inm.id}" value="${esc(inm.nombre)}" style="margin-bottom:14px">`;
 
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">1. Ingreso — Alquiler mensual</div>`;
-    h+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmalq="${inm.id}" value="${m.alquiler||""}" placeholder="0" style="margin-bottom:16px">`;
+    if(usdPais){
+      h+=`<div class="seg" data-inmalqmon="${inm.id}" style="margin-bottom:8px;width:fit-content">
+        <button data-c="local" class="${m.alquiler.moneda==='local'?'on':''}">${CUR[state.pais].sym}</button>
+        <button data-c="usd" class="${m.alquiler.moneda==='usd'?'on':''}">$</button>
+      </div>`;
+    }
+    h+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmalq="${inm.id}" value="${m.alquiler.monto||""}" placeholder="0">`;
+    if(usdPais&&m.alquiler.moneda==="usd"){
+      const tcUsado=m.alquiler.tc||cfg.tc||1;
+      h+=`<div style="color:var(--dim);font-size:11px;margin-top:6px">≈ ${money(alqLocal)} · tipo de cambio ${CUR[state.pais].sym}${tcUsado} usado ese mes</div>`;
+    }
+    h+=`<div style="margin-bottom:16px"></div>`;
 
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos</div>`;
     h+=inm.catGastos.map((cat,i)=>`<div class="set-row"><span class="cdot" style="background:${PAL[i%PAL.length]}"></span><input data-inmcat="${inm.id}" data-i="${i}" value="${esc(cat)}" style="flex:1.4"><input class="field num" type="number" inputmode="decimal" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${m.gastos[i]||""}" placeholder="0" style="max-width:108px;padding:8px 10px"><span class="x" data-inmdelcat="${inm.id}" data-i="${i}">✕</span></div>`).join("");
@@ -906,9 +953,18 @@ function wireInm(key){
     inm.nombre=inp.value.trim()||"Inmueble"; await saveCfg(); renderInm();
   });
 
+  v.querySelectorAll("[data-inmalqmon]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===seg.dataset.inmalqmon); if(!inm)return;
+    const m=mesData(inm,key); m.alquiler.moneda=b.dataset.c==="usd"?"usd":"local";
+    if(m.alquiler.moneda==="usd") m.alquiler.tc=cfg.tc||m.alquiler.tc||1;
+    await saveCfg(); renderInm();
+  }));
+
   v.querySelectorAll("[data-inmalq]").forEach(inp=>inp.onchange=async()=>{
     const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmalq); if(!inm)return;
-    const m=mesData(inm,key); m.alquiler=Math.max(0,+inp.value||0); await saveCfg(); renderInm();
+    const m=mesData(inm,key); m.alquiler.monto=Math.max(0,+inp.value||0);
+    if(m.alquiler.moneda==="usd") m.alquiler.tc=cfg.tc||m.alquiler.tc||1;
+    await saveCfg(); renderInm();
   });
 
   v.querySelectorAll("[data-inmgasto]").forEach(inp=>inp.onchange=async()=>{
@@ -950,7 +1006,16 @@ function renderSet(){
   h+=`<div class="set-sec"><h3>General</h3>
     <label style="color:var(--muted);font-size:11px;margin-left:2px">Nombre del hogar</label>
     <input class="field" id="setHogar" value="${esc(cfg.hogar)}" style="margin-bottom:9px">`;
-  if(CUR[state.pais].usd){ h+=`<label style="color:var(--muted);font-size:11px;margin-left:2px">Tipo de cambio (1 USD = ${CUR[state.pais].sym} …)</label><input class="field num" id="setTc" type="number" inputmode="decimal" value="${cfg.tc}" style="margin-bottom:9px">`; }
+  if(CUR[state.pais].usd){
+    const tcEstado = cfg.tcFecha===today() ? "Actualizado hoy" : (cfg.tcFecha?`Última actualización: ${fechaLarga(cfg.tcFecha)}`:"Aún no se ha actualizado");
+    h+=`<label style="color:var(--muted);font-size:11px;margin-left:2px">Tipo de cambio (1 USD = ${CUR[state.pais].sym} …)</label>
+      <input class="field num" id="setTc" type="number" inputmode="decimal" value="${cfg.tc}" style="margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px">
+        <span style="color:var(--dim);font-size:11px" id="setTcEstado">${esc(tcEstado)}</span>
+        <span id="setTcNow" style="color:#c9b8ff;font-size:11px;font-weight:700;cursor:pointer">Actualizar ahora</span>
+      </div>
+      <div class="chk ${cfg.tcAuto!==false?'on':''}" id="setTcAuto" style="margin-bottom:9px"><span class="bx">✓</span><span>Actualizar automáticamente cada día</span></div>`;
+  }
   h+=`<div class="row" style="display:flex;gap:8px"><div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Presupuesto mensual</label><input class="field num" id="setPre" type="number" inputmode="decimal" value="${cfg.presupuesto||""}" placeholder="0"></div>
     <div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Meta de ahorro</label><input class="field num" id="setMeta" type="number" inputmode="decimal" value="${cfg.meta||""}" placeholder="0"></div></div>
     <div class="set-add" id="setSaveGen">Guardar general</div></div>`;
@@ -965,7 +1030,9 @@ function renderSet(){
   h+=`<div class="set-add" id="addPer">+ Agregar persona</div></div>`;
 
   $("viewSet").innerHTML=h;
-  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc"))cfg.tc=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
+  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
+  if($("setTcNow"))$("setTcNow").onclick=async()=>{ $("setTcNow").textContent="Actualizando…"; const ok=await fetchTipoCambio(); if(!ok){ $("setTcNow").textContent="Actualizar ahora"; alert("No se pudo obtener el tipo de cambio. Revise su conexión."); } };
+  if($("setTcAuto"))$("setTcAuto").onclick=async()=>{ cfg.tcAuto=!(cfg.tcAuto!==false); await saveCfg(); renderSet(); };
   wireListSection("gastos"); wireListSection("ingresos"); wireListSection("ahorros");
   $("viewSet").querySelectorAll("[data-per]").forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.per; const old=cfg.personas[i]; const v=inp.value.trim(); if(!v){renderSet();return;} cfg.personas[i]=v; tx.forEach(t=>{if(t.quien===old)t.quien=v;}); await saveCfg(); await saveTx(); });
   $("viewSet").querySelectorAll("[data-delper]").forEach(b=>b.onclick=async()=>{ if(cfg.personas.length<=1)return; cfg.personas.splice(+b.dataset.delper,1); await saveCfg(); renderSet(); buildSidebar(); });
