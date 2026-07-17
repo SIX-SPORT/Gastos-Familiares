@@ -267,6 +267,7 @@
         <a data-v="Panel" class="on"><span class="ic">◔</span>Panel</a>
         <a data-v="Movimientos"><span class="ic">▤</span>Movimientos</a>
         <a data-v="Resumen"><span class="ic">▥</span>Resumen</a>
+        <a data-v="Inmuebles"><span class="ic">🏢</span>Inmuebles</a>
         <a data-v="Ajustes"><span class="ic">⚙</span>Ajustes</a>
       </nav>
       <div class="grp">
@@ -299,6 +300,7 @@
       <div id="viewPanel"></div>
       <div id="viewMov" class="hidden"></div>
       <div id="viewRes" class="hidden"></div>
+      <div id="viewInm" class="hidden"></div>
       <div id="viewSet" class="hidden"></div>
     </main>
   </div>
@@ -309,6 +311,7 @@
     <a data-v="Panel" class="on"><span class="ic">◔</span>Panel</a>
     <a data-v="Movimientos"><span class="ic">▤</span>Movim.</a>
     <a data-v="Resumen"><span class="ic">▥</span>Resumen</a>
+    <a data-v="Inmuebles"><span class="ic">🏢</span>Inmueb.</a>
     <a data-v="Ajustes"><span class="ic">⚙</span>Ajustes</a>
   </nav>
 </div>
@@ -442,13 +445,31 @@ const PAL=["#8b5cf6","#f472b6","#60a5fa","#fbbf24","#fb7185","#22d3ee","#f59e0b"
 const DEFG=["Supermercado","Colegio","Cable/Internet","Gasolina","Restaurantes","Barbería","Salud","Transporte","Casa","Ropa","Servicios","Otros"];
 const CATICON={Supermercado:"🛒","Cable/Internet":"📶",Colegio:"🎓",Gasolina:"⛽",Restaurantes:"🍽️",Barbería:"💈",Salud:"➕",Transporte:"🚌",Casa:"🏠",Ropa:"👕",Servicios:"🔌",Salario:"💵",Extra:"💰",Otro:"•",Otros:"•",Ahorro:"🐷",Emergencia:"🛟"};
 
+const DEFGI=["Impuesto de sociedad","Mantenimiento","Municipalidad","IVA"];
+function uid(){ return "im"+Date.now()+Math.random().toString(36).slice(2,6); }
 function defaultCfg(pais){
   return { hogar:"Nuestro hogar", tc:CUR[pais].tc, meta:0, presupuesto:0,
     personas:["Mamá","Papá","Hijo"],
     gastos:DEFG.map((n,i)=>({n,c:PAL[i%PAL.length]})),
     ingresos:["Salario","Extra","Otro"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
-    ahorros:["Ahorro","Emergencia"].map((n,i)=>({n,c:PAL[i%PAL.length]})) };
+    ahorros:["Ahorro","Emergencia"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
+    inmuebles:[] };
 }
+function normInmMes(raw,catLen){
+  const r=raw||{};
+  const gastos=Array.isArray(r.gastos)?r.gastos.map(v=>Math.max(0,+v||0)):[];
+  while(gastos.length<catLen) gastos.push(0);
+  return { alquiler:Math.max(0,+r.alquiler||0), gastos };
+}
+function normInmueble(x){
+  const catGastos=(Array.isArray(x.catGastos)&&x.catGastos.length)?x.catGastos.map(c=>String(c||"").trim()||"Gasto"):DEFGI.slice();
+  const meses={};
+  if(x.meses&&typeof x.meses==="object"){
+    Object.keys(x.meses).forEach(k=>{ meses[k]=normInmMes(x.meses[k],catGastos.length); });
+  }
+  return { id:x.id||uid(), nombre:(x.nombre||"Inmueble").toString(), catGastos, meses };
+}
+function normInmuebles(arr){ return Array.isArray(arr)?arr.map(normInmueble):[]; }
 function normList(arr,fallback){
   if(!Array.isArray(arr)||!arr.length) return fallback;
   return arr.map((x,i)=> ({ n:(typeof x==="string"?x:(x.n||x.nombre||"—")), c:PAL[i%PAL.length] }));
@@ -464,12 +485,13 @@ function migrateCfg(pais,raw){
     personas: (Array.isArray(raw.personas)&&raw.personas.length)?raw.personas.slice():d.personas,
     gastos: normList(raw.gastos,d.gastos),
     ingresos: normList(raw.ingresos,d.ingresos),
-    ahorros: normList(raw.ahorros,d.ahorros)
+    ahorros: normList(raw.ahorros,d.ahorros),
+    inmuebles: normInmuebles(raw.inmuebles)
   };
 }
 
 /* ---------- estado ---------- */
-let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", movPeriod:"dia", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), diaRef:"", editId:null };
+let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", movPeriod:"dia", persona:"", verUSD:false, mesRef:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), diaRef:"", editId:null, inmMes:(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")), inmOpen:null };
 state.diaRef=(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-"+String(new Date().getDate()).padStart(2,"0"));
 let perOpen=false;
 let tx=[], cfg=defaultCfg("CR");
@@ -542,7 +564,7 @@ function catIcon(nombre){ return CATICON[nombre]||"•"; }
 function dispAcum(corte){ let s=0; for(const t of tx){ if(t.fecha<=corte){ if(t.tipo==="ingreso")s+=(+t.monto||0); else if(t.tipo==="gasto"&&!t.externo)s-=(+t.monto||0); } } return s; }
 
 /* ---------- render raíz ---------- */
-function renderAll(){ buildColorMap(); buildSidebar(); if(state.view==="Panel")renderPanel(); else if(state.view==="Movimientos")renderMov(); else if(state.view==="Resumen")renderRes(); else renderSet(); }
+function renderAll(){ buildColorMap(); buildSidebar(); if(state.view==="Panel")renderPanel(); else if(state.view==="Movimientos")renderMov(); else if(state.view==="Resumen")renderRes(); else if(state.view==="Inmuebles")renderInm(); else renderSet(); }
 
 function buildSidebar(){
   $("sbFlag").className="flag fl-"+state.pais;
@@ -563,7 +585,7 @@ function buildSidebar(){
   fillModalSelects();
 }
 
-function switchCountry(c){ if(c===state.pais)return; state.pais=c; state.persona=""; state.verUSD=false; perOpen=false; tx=[]; cfg=defaultCfg(c); buildSidebar(); renderAll(); startSync(); }
+function switchCountry(c){ if(c===state.pais)return; state.pais=c; state.persona=""; state.verUSD=false; perOpen=false; state.inmOpen=null; tx=[]; cfg=defaultCfg(c); buildSidebar(); renderAll(); startSync(); }
 
 /* ============================ PANEL ============================ */
 function periodLabel(){ return {dia:"Hoy",semana:"Esta semana",mes:"Este mes",anio:"Este año",total:"Total"}[state.period]; }
@@ -784,6 +806,142 @@ function renderRes(){
   h+=metaCard()+`</div>`;
   $("viewRes").innerHTML=h; wireCurToggle();
   $("viewRes").querySelectorAll("[data-det]").forEach(el=>el.onclick=()=>openDetalle(el.dataset.det));
+}
+
+/* ============================ INMUEBLES ============================ */
+function imY(){ return +state.inmMes.slice(0,4); }
+function imM(){ return +state.inmMes.slice(5,7)-1; }
+function imLabel(){ return MESL[imM()]+" "+imY(); }
+function imIsCurrent(){ const d=new Date(); return state.inmMes===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")); }
+function imShift(delta){ const dt=new Date(imY(),imM()+delta,1); state.inmMes=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0"); }
+function mesData(inm,key){
+  if(!inm.meses) inm.meses={};
+  const raw=inm.meses[key]||{};
+  const gastos=inm.catGastos.map((_,i)=> typeof raw.gastos?.[i]==="number"?raw.gastos[i]:Math.max(0,+raw.gastos?.[i]||0));
+  const m={ alquiler:Math.max(0,+raw.alquiler||0), gastos };
+  inm.meses[key]=m;
+  return m;
+}
+function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0); return { alquiler:m.alquiler, gastos:gTot, neto:m.alquiler-gTot }; }
+
+function renderInm(){
+  const key=state.inmMes;
+  let h=`<div class="mtop"><div><h2>Inmuebles</h2><div class="sub">${esc(CUR[state.pais].name)}</div></div></div>`;
+  h+=`<div class="mnav-row"><button id="imPrev" aria-label="Mes anterior">‹</button><button id="imCur">📅 ${esc(imLabel())}${imIsCurrent()?"":" ·"}</button><button id="imNext" aria-label="Mes siguiente">›</button>${imIsCurrent()?"":'<button id="imReset">Hoy</button>'}</div>`;
+
+  let tAlq=0,tGas=0;
+  cfg.inmuebles.forEach(inm=>{ const t=inmTotales(inm,key); tAlq+=t.alquiler; tGas+=t.gastos; });
+  const tNeto=tAlq-tGas;
+  h+=`<div class="grid cards3" style="margin-bottom:14px">
+    <div class="card"><div class="t">Ingresos (alquiler)</div><div style="font-size:18px;font-weight:800;color:var(--green)" class="num">${money(tAlq)}</div></div>
+    <div class="card"><div class="t">Gastos</div><div style="font-size:18px;font-weight:800;color:var(--red)" class="num">${money(tGas)}</div></div>
+    <div class="card"><div class="t">Neto</div><div style="font-size:18px;font-weight:800;color:${tNeto>=0?'var(--green)':'var(--red)'}" class="num">${money(tNeto)}</div></div>
+  </div>`;
+
+  if(!cfg.inmuebles.length){
+    h+=`<div class="card empty" style="margin-bottom:14px">🏢<br>Aún no hay inmuebles registrados en ${esc(CUR[state.pais].name)}.<br>Agregue el primero abajo.</div>`;
+  } else {
+    h+=cfg.inmuebles.map(inm=>inmCardHtml(inm,key)).join("");
+  }
+  h+=`<div class="set-add" id="addInm" style="margin-top:2px">+ Agregar inmueble</div>`;
+
+  $("viewInm").innerHTML=h;
+  wireInm(key);
+}
+
+function inmCardHtml(inm,key){
+  const m=mesData(inm,key);
+  const gTot=m.gastos.reduce((a,b)=>a+(+b||0),0);
+  const neto=(+m.alquiler||0)-gTot;
+  const open=state.inmOpen===inm.id;
+  let h=`<div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">`;
+  h+=`<div data-inmhead="${inm.id}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px;cursor:pointer">
+    <div style="min-width:0">
+      <div style="color:#fff;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inm.nombre)}</div>
+      <div style="color:var(--dim);font-size:11px;margin-top:2px">Alquiler ${money(m.alquiler)} · Gastos ${money(gTot)}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex:none">
+      <span class="num" style="font-weight:800;font-size:14px;color:${neto>=0?'var(--green)':'var(--red)'}">${money(neto)}</span>
+      <span style="color:var(--dim);font-size:12px;transition:transform .2s;display:inline-block;transform:${open?'rotate(180deg)':'none'}">▾</span>
+    </div>
+  </div>`;
+  if(open){
+    h+=`<div style="padding:2px 13px 15px;border-top:1px solid rgba(255,255,255,.06)">`;
+    h+=`<label style="color:var(--muted);font-size:11px;margin:12px 0 4px 2px;display:block">Nombre del inmueble</label>`;
+    h+=`<input class="field" data-inmnombre="${inm.id}" value="${esc(inm.nombre)}" style="margin-bottom:14px">`;
+
+    h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">1. Ingreso — Alquiler mensual</div>`;
+    h+=`<input class="field num" type="number" inputmode="decimal" min="0" data-inmalq="${inm.id}" value="${m.alquiler||""}" placeholder="0" style="margin-bottom:16px">`;
+
+    h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos</div>`;
+    h+=inm.catGastos.map((cat,i)=>`<div class="set-row"><span class="cdot" style="background:${PAL[i%PAL.length]}"></span><input data-inmcat="${inm.id}" data-i="${i}" value="${esc(cat)}" style="flex:1.4"><input class="field num" type="number" inputmode="decimal" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${m.gastos[i]||""}" placeholder="0" style="max-width:108px;padding:8px 10px"><span class="x" data-inmdelcat="${inm.id}" data-i="${i}">✕</span></div>`).join("");
+    h+=`<div class="set-add" data-inmaddcat="${inm.id}">+ Agregar gasto</div>`;
+
+    h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
+      <span style="color:var(--muted);font-size:12px">Neto de ${esc(imLabel().toLowerCase())}</span>
+      <span class="num" style="font-weight:800;font-size:15px;color:${neto>=0?'var(--green)':'var(--red)'}">${money(neto)}</span>
+    </div>`;
+    h+=`<button data-inmdel="${inm.id}" style="width:100%;background:rgba(251,113,133,.12);color:var(--red);font-weight:700;border-radius:12px;padding:12px;font-size:14px;margin-top:14px">Borrar inmueble</button>`;
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  return h;
+}
+
+function wireInm(key){
+  const v=$("viewInm");
+  if($("imPrev"))$("imPrev").onclick=()=>{ imShift(-1); renderInm(); };
+  if($("imNext"))$("imNext").onclick=()=>{ imShift(1); renderInm(); };
+  if($("imReset"))$("imReset").onclick=()=>{ const d=new Date(); state.inmMes=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); renderInm(); };
+
+  if($("addInm"))$("addInm").onclick=async()=>{
+    const inm={ id:uid(), nombre:"Nuevo inmueble", catGastos:DEFGI.slice(), meses:{} };
+    cfg.inmuebles.push(inm); state.inmOpen=inm.id; await saveCfg(); renderInm();
+  };
+
+  v.querySelectorAll("[data-inmhead]").forEach(el=>el.onclick=()=>{ const id=el.dataset.inmhead; state.inmOpen=(state.inmOpen===id)?null:id; renderInm(); });
+
+  v.querySelectorAll("[data-inmnombre]").forEach(inp=>inp.onchange=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmnombre); if(!inm)return;
+    inm.nombre=inp.value.trim()||"Inmueble"; await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmalq]").forEach(inp=>inp.onchange=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmalq); if(!inm)return;
+    const m=mesData(inm,key); m.alquiler=Math.max(0,+inp.value||0); await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmgasto]").forEach(inp=>inp.onchange=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmgasto); if(!inm)return;
+    const i=+inp.dataset.i; const m=mesData(inm,key); m.gastos[i]=Math.max(0,+inp.value||0); await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmcat]").forEach(inp=>inp.onchange=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmcat); if(!inm)return;
+    const i=+inp.dataset.i; inm.catGastos[i]=inp.value.trim()||inm.catGastos[i]; await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmdelcat]").forEach(b=>b.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmdelcat); if(!inm)return;
+    if(inm.catGastos.length<=1)return;
+    const i=+b.dataset.i;
+    inm.catGastos.splice(i,1);
+    Object.values(inm.meses||{}).forEach(m=>{ if(Array.isArray(m.gastos)) m.gastos.splice(i,1); });
+    await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmaddcat]").forEach(b=>b.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmaddcat); if(!inm)return;
+    inm.catGastos.push("Nuevo gasto"); await saveCfg(); renderInm();
+  });
+
+  v.querySelectorAll("[data-inmdel]").forEach(b=>b.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmdel); if(!inm)return;
+    if(!confirm(`¿Borrar "${inm.nombre}"? Se perderá su historial de meses.`))return;
+    cfg.inmuebles=cfg.inmuebles.filter(x=>x.id!==inm.id);
+    if(state.inmOpen===inm.id) state.inmOpen=null;
+    await saveCfg(); renderInm();
+  });
 }
 
 /* ============================ AJUSTES ============================ */
@@ -1025,9 +1183,10 @@ function go(v){ state.view=v; ["Panel","Mov","Res","Set"].forEach(x=>{});
   $("viewPanel").classList.toggle("hidden",v!=="Panel");
   $("viewMov").classList.toggle("hidden",v!=="Movimientos");
   $("viewRes").classList.toggle("hidden",v!=="Resumen");
+  $("viewInm").classList.toggle("hidden",v!=="Inmuebles");
   $("viewSet").classList.toggle("hidden",v!=="Ajustes");
   document.querySelectorAll("#navD a,#navM a").forEach(a=>a.classList.toggle("on",a.dataset.v===v));
-  if(v==="Panel")renderPanel(); else if(v==="Movimientos")renderMov(); else if(v==="Resumen")renderRes(); else renderSet();
+  if(v==="Panel")renderPanel(); else if(v==="Movimientos")renderMov(); else if(v==="Resumen")renderRes(); else if(v==="Inmuebles")renderInm(); else renderSet();
 }
 document.querySelectorAll("#navD a[data-v],#navM a[data-v]").forEach(a=>a.onclick=()=>go(a.dataset.v));
 document.addEventListener("click",e=>{ const g=e.target.closest("[data-go]"); if(g)go(g.dataset.go); });
