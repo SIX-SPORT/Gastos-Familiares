@@ -240,11 +240,13 @@
     .col-a,.col-2{grid-template-columns:1fr}
     .subcards{grid-template-columns:1fr 1fr}
     .mbar{display:flex !important}
-    .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;background:#ffffff;border-top:1px solid var(--cardb);padding:8px 6px calc(10px + env(safe-area-inset-bottom));justify-content:space-around;z-index:40}
+    .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;background:#ffffff;border-top:1px solid var(--cardb);padding:8px 6px calc(10px + env(safe-area-inset-bottom));justify-content:space-around;align-items:flex-end;z-index:40}
     .bnav a{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:10.5px;font-weight:600}
-    .bnav a.on{color:var(--accent)}
+    .bnav a.on{color:var(--accent2)}
     .bnav a .ic{font-size:19px}
-    .fab{bottom:calc(80px + env(safe-area-inset-bottom))}
+    .bnav a.add{background:var(--accent);color:var(--acc-ink);border-radius:14px;padding:7px 12px;transform:translateY(-4px);box-shadow:0 4px 14px rgba(231,250,77,.45)}
+    .bnav a.add .ic{font-size:20px}
+    .fab{display:none}
   }
   .mbar{display:none;flex-direction:column;gap:9px;margin-bottom:12px}
   .mbar .mbar-top{display:flex;align-items:center;justify-content:space-between}
@@ -289,11 +291,11 @@
       <div class="brand"><span class="flag" id="sbFlag"></span><span class="nm">Nuestro hogar<br><small id="sbCty">Costa Rica</small></span></div>
       <div class="sdisp"><div class="l">Disponible</div><div class="v num" id="sbDisp">₡0</div></div>
       <nav class="nav" id="navD">
-        <a data-v="Panel" class="on"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span>Panel</a>
+        <a data-v="Panel" class="on"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/></svg></span>Panel</a>
         <a data-v="Movimientos"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M4 8h13m0 0l-3.5-3.5M17 8l-3.5 3.5"/><path d="M20 16H7m0 0l3.5-3.5M7 16l3.5 3.5"/></svg></span>Movimientos</a>
-        <a data-v="Resumen"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M12 3v9l7.5 4.3"/><circle cx="12" cy="12" r="9"/></svg></span>Resumen</a>
+        <a data-v="Resumen"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M5 19v-8"/><path d="M12 19V6"/><path d="M19 19v-5"/></svg></span>Resumen</a>
         <a data-v="Inmuebles"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"/></svg></span>Inmuebles</a>
-        <a data-v="Ajustes"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 4.9l1.55 1.55M17.55 17.55l1.55 1.55M3 12h2.2M18.8 12H21M4.9 19.1l1.55-1.55M17.55 6.45l1.55-1.55"/></svg></span>Ajustes</a>
+        <a data-v="Ajustes"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M4 7h9"/><path d="M17 7h3"/><circle cx="14" cy="7" r="2"/><path d="M4 12h2"/><path d="M10 12h10"/><circle cx="7" cy="12" r="2"/><path d="M4 17h9"/><path d="M17 17h3"/><circle cx="14" cy="17" r="2"/></svg></span>Ajustes</a>
       </nav>
       <div class="grp">
         <div class="hd" id="perHd"><span>Personas</span><span class="ci" id="perCi">▾</span></div>
@@ -333,11 +335,12 @@
   <button class="fab" id="fab"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M12 5v14M5 12h14"/></svg></button>
 
   <nav class="bnav" id="navM">
-    <a data-v="Panel" class="on"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span>Panel</a>
+    <a data-v="Panel" class="on"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/></svg></span>Panel</a>
     <a data-v="Movimientos"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M4 8h13m0 0l-3.5-3.5M17 8l-3.5 3.5"/><path d="M20 16H7m0 0l3.5-3.5M7 16l3.5 3.5"/></svg></span>Movim.</a>
-    <a data-v="Resumen"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M12 3v9l7.5 4.3"/><circle cx="12" cy="12" r="9"/></svg></span>Resumen</a>
+    <a data-v="Resumen"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M5 19v-8"/><path d="M12 19V6"/><path d="M19 19v-5"/></svg></span>Resumen</a>
     <a data-v="Inmuebles"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"/></svg></span>Inmueb.</a>
-    <a data-v="Ajustes"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 4.9l1.55 1.55M17.55 17.55l1.55 1.55M3 12h2.2M18.8 12H21M4.9 19.1l1.55-1.55M17.55 6.45l1.55-1.55"/></svg></span>Ajustes</a>
+    <a data-v="Ajustes"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M4 7h9"/><path d="M17 7h3"/><circle cx="14" cy="7" r="2"/><path d="M4 12h2"/><path d="M10 12h10"/><circle cx="7" cy="12" r="2"/><path d="M4 17h9"/><path d="M17 17h3"/><circle cx="14" cy="17" r="2"/></svg></span>Ajustes</a>
+    <a id="navAddBtn" class="add"><span class="ic"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-0.15em"><path d="M12 5v14M5 12h14"/></svg></span>Agregar</a>
   </nav>
 </div>
 
@@ -1477,7 +1480,7 @@ document.addEventListener("click",e=>{ const g=e.target.closest("[data-go]"); if
 $("perHd").onclick=()=>{ const l=$("perList"); const open=l.style.display!=="none"; l.style.display=open?"none":"flex"; $("perCi").style.transform=open?"rotate(-90deg)":""; };
 
 /* modal wiring */
-$("fab").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=saveModal; $("mdDel").onclick=delModal;
+$("fab").onclick=openAdd; if($("navAddBtn"))$("navAddBtn").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=saveModal; $("mdDel").onclick=delModal;
 $("fExterno").onclick=()=>{ mdExterno=!mdExterno; $("fExterno").classList.toggle("on",mdExterno); updateExtCurUI(); };
 $("fExtCur").querySelectorAll("button").forEach(b=>b.onclick=()=>{ mdExtCur=b.dataset.c; updateExtCurUI(); });
 $("fMonto").addEventListener("input",()=>{ if(mdExterno&&mdExtCur==="usd")updateExtCurUI(); });
