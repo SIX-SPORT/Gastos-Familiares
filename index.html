@@ -546,6 +546,18 @@ function startSync(){
   }, e=>console.warn(e));
 }
 
+/* ---------- datos de los 3 países en paralelo (para el resumen combinado) ---------- */
+let paisData={}, paisUnsub=[];
+function startPaisDataSync(){
+  paisUnsub.forEach(u=>{ try{u();}catch(e){} }); paisUnsub=[];
+  Object.keys(CUR).forEach(k=>{
+    paisData[k]=paisData[k]||{tx:[],cfg:defaultCfg(k)};
+    const tRef=doc(db,CUR[k].col,"tx"), cRef=doc(db,CUR[k].col,"config");
+    paisUnsub.push(onSnapshot(tRef, s=>{ paisData[k].tx=(s.exists()&&Array.isArray(s.data().items))?s.data().items:[]; if(state.view==="Resumen")renderRes(); }, e=>console.warn(e)));
+    paisUnsub.push(onSnapshot(cRef, s=>{ paisData[k].cfg=s.exists()?migrateCfg(k,s.data()):defaultCfg(k); if(state.view==="Resumen")renderRes(); }, e=>console.warn(e)));
+  });
+}
+
 /* ---------- tipo de cambio automático (diario) ---------- */
 let tcFetching=false;
 async function checkTipoCambioDiario(pais){
@@ -579,6 +591,8 @@ const usdFmt=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maxi
 function rate(){ return (cfg.tc&&cfg.tc>0)?cfg.tc:1; }
 function money(v){ v=v||0; if(state.verUSD && CUR[state.pais].usd){ const neg=v<0; return (neg?"-":"")+usdFmt.format(Math.round(Math.abs(v)/rate())); }
   const c=CUR[state.pais]; const r=c.dec?Math.round(v*100)/100:Math.round(v); return fmtLocal().format(r); }
+let _fmtOther={};
+function moneyFor(k,v){ v=v||0; const c=CUR[k]; if(!_fmtOther[k])_fmtOther[k]=new Intl.NumberFormat(c.loc,{style:"currency",currency:c.code,minimumFractionDigits:c.dec,maximumFractionDigits:c.dec}); return _fmtOther[k].format(c.dec?Math.round(v*100)/100:Math.round(v)); }
 function shortMoney(v){ v=v||0; let sym,a; if(state.verUSD&&CUR[state.pais].usd){ sym="$"; a=Math.round(Math.abs(v)/rate()); } else { sym=CUR[state.pais].sym; a=Math.abs(Math.round(v)); }
   const neg=v<0?"-":""; if(a>=1000){ const k=a/1000; return neg+sym+(a>=10000?Math.round(k):(Math.round(k*10)/10)).toString().replace(".",",")+"k"; } return neg+sym+a; }
 
@@ -686,18 +700,18 @@ function renderPanel(){
   h+=`<div class="periods" id="perBtns">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.period===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+usdToggleMobile()+`</div>`;
   h+=perBlock("pp");
 
-  // barra de balance: total acumulado (entró vs gastado vs queda)
-  const totIng=sum(tx.filter(t=>t.tipo==="ingreso"));
-  const totGasAll=sum(tx.filter(t=>t.tipo==="gasto"&&!t.externo));
+  // barra de balance: entró vs gastado del período visible (día/semana/mes/año/total), NO acumulado histórico
+  const totIng=ing;
+  const totGasAll=sum(per.filter(t=>t.tipo==="gasto"&&!t.externo));
   const queda=totIng-totGasAll;
-  const extList=tx.filter(t=>t.tipo==="gasto"&&t.externo).sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:0);
+  const extList=per.filter(t=>t.tipo==="gasto"&&t.externo).sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:0);
   const totExt=sum(extList);
-  if(totIng>0||totGasAll>0){
-    const pg=totIng>0?Math.min(100,Math.round(totGasAll/totIng*100)):100;
+  {
+    const pg=totIng>0?Math.min(100,Math.round(totGasAll/totIng*100)):(totGasAll>0?100:0);
     const pq=Math.max(0,100-pg);
     h+=`<div class="card balbar" style="margin-bottom:11px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:11px;flex-wrap:wrap">
-        <div><div class="bl">Entró (total)</div><div class="bv" style="color:var(--green)">${money(totIng)}</div></div>
+        <div><div class="bl">Entró</div><div class="bv" style="color:var(--green)">${money(totIng)}</div></div>
         <div style="text-align:center"><div class="bl">Gastado</div><div class="bv" style="color:var(--red)">${money(totGasAll)}</div></div>
         <div style="text-align:right"><div class="bl" style="color:var(--accent2)">Disponible</div><div class="bv" style="color:${queda>=0?'var(--ink)':'var(--red)'}">${money(queda)}</div></div>
       </div>
@@ -724,7 +738,7 @@ function renderPanel(){
     const C=326.7256; let acc=0;
     const arcs=cats.map(([n,v])=>{ const frac=v/totGas; const dash=frac*C; const rot=-90+acc*360; acc+=frac; return `<circle cx="70" cy="70" r="52" fill="none" stroke="${catColor(n)}" stroke-width="16" stroke-dasharray="${dash.toFixed(1)} ${(C-dash).toFixed(1)}" transform="rotate(${rot.toFixed(1)} 70 70)"/>`; }).join("");
     h+=`<div class="donutbox"><div style="position:relative;width:120px;height:120px;flex:none"><svg viewBox="0 0 140 140" width="120" height="120"><circle cx="70" cy="70" r="52" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="16"/>${arcs}</svg><div class="hole"><span class="hl">Total</span><span class="hv num">${shortMoney(totGas)}</span></div></div>
-      <div class="catlist">`+cats.map(([n,v])=>`<div class="catrow"><span class="nm"><span class="dot" style="background:${catColor(n)}"></span> ${esc(n)}</span><span class="am num">${money(v)}</span></div>`).join("")+`</div></div>`;
+      <div class="catlist">`+cats.map(([n,v])=>`<div class="catrow"><span class="nm" style="display:flex;align-items:center;gap:8px">${catIconHTML(n,22)} ${esc(n)}</span><span class="am num">${money(v)}</span></div>`).join("")+`</div></div>`;
   } else { h+=`<div class="empty">Sin gastos en ${esc(periodLabel().toLowerCase())}.</div>`; }
   // presupuesto
   if(cfg.presupuesto>0){
@@ -860,6 +874,17 @@ function renderRes(){
     <div class="mc" data-det="gasto" style="cursor:pointer"><div class="l">Gastos <span style="float:right;color:var(--accent2);font-size:11px">ver ›</span></div><div class="v num" style="color:var(--red)">${money(gas)}</div></div>
     <div class="mc" data-det="ahorro" style="cursor:pointer"><div class="l">Ahorros <span style="float:right;color:var(--accent2);font-size:11px">ver ›</span></div><div class="v num" style="color:var(--blue)">${money(aho)}</div></div>
     <div class="mc acc"><div class="l">Disponible</div><div class="v num">${money(disp)}</div></div></div>`;
+
+  // gastos totales por país (hogar + inmuebles), cada uno en su propia moneda, sin convertir
+  h+=`<div class="card" style="margin-bottom:12px"><div class="t">Gastos totales del mes · Costa Rica + Nicaragua + España</div>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:10px">Hogar + inmuebles de cada país en su propia moneda (sin convertir) · ${mesRefLabel()}</div>`;
+  h+=Object.keys(CUR).map(k=>{
+    const t=totalPaisMes(k,state.mesRef);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)">
+      <span style="display:flex;align-items:center;gap:9px;color:var(--ink);font-size:13px;font-weight:600"><span class="flag fl-${k}" style="width:22px;height:16px"></span>${esc(CUR[k].name)}${k===state.pais?' <span style="color:var(--accent2);font-weight:400;font-size:11px">(actual)</span>':''}</span>
+      <span style="text-align:right"><span class="num" style="color:var(--ink);font-weight:700">${moneyFor(k,t.total)}</span><br><span style="color:var(--dim);font-size:10.5px">hogar ${moneyFor(k,t.hogar)} · inmuebles ${moneyFor(k,t.inm)}</span></span>
+    </div>`;
+  }).join("")+`</div>`;
 
   // tendencia 6 meses
   const trend=[]; const d=new Date();
@@ -1019,7 +1044,16 @@ function mesData(inm,key){
   return norm;
 }
 function montoLocal(x){ return x.moneda==="usd" ? x.monto*(x.tc||cfg.tc||1) : x.monto; }
+function montoLocalGen(x,tc){ return x.moneda==="usd" ? x.monto*(x.tc||tc||1) : x.monto; }
 function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,g)=>a+montoLocal(g),0); const alq=montoLocal(m.alquiler); return { alquiler:alq, gastos:gTot, neto:alq-gTot }; }
+/* total de un país (hogar + inmuebles) para un mes dado, en la moneda propia de ese país */
+function totalPaisMes(k,mesKey){
+  const d=paisData[k]||{tx:[],cfg:defaultCfg(k)};
+  const hogar=sum((d.tx||[]).filter(t=>t.tipo==="gasto"&&!t.externo&&t.fecha&&t.fecha.slice(0,7)===mesKey));
+  let inm=0;
+  (d.cfg.inmuebles||[]).forEach(x=>{ const m=mesData(x,mesKey); inm+=m.gastos.reduce((a,g)=>a+montoLocalGen(g,d.cfg.tc),0); });
+  return { hogar, inm, total:hogar+inm };
+}
 
 function renderInm(){
   const key=state.inmMes;
@@ -1560,7 +1594,7 @@ if($("btnRefresh")) $("btnRefresh").onclick=()=>refrescarApp();
 if(auth){
   onAuthStateChanged(auth,user=>{
     $("splash").classList.add("hidden");
-    if(user){ $("login").classList.add("hidden"); $("app").classList.remove("hidden"); startSync(); }
+    if(user){ $("login").classList.add("hidden"); $("app").classList.remove("hidden"); startSync(); startPaisDataSync(); }
     else { $("app").classList.add("hidden"); $("login").classList.remove("hidden"); }
   });
 } else { $("splash").classList.add("hidden"); $("login").classList.remove("hidden"); $("loginErr").textContent="No se pudo conectar a Firebase. Revise config.js"; }
