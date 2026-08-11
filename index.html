@@ -474,7 +474,7 @@ const CATICON={Supermercado:"🛒","Cable/Internet":"📶",Colegio:"🎓",Gasoli
 const DEFGI=["Impuesto de sociedad","Mantenimiento","Municipalidad","IVA"];
 function uid(){ return "im"+Date.now()+Math.random().toString(36).slice(2,6); }
 function defaultCfg(pais){
-  return { hogar:"Nuestro hogar", tc:CUR[pais].tc, tcAuto:true, tcFecha:"", meta:0, presupuesto:0,
+  return { hogar:"Nuestro hogar", tc:CUR[pais].tc, tcAuto:true, tcFecha:"", meta:0, presupuesto:0, ingresoMensual:0,
     personas:["Mamá","Papá","Hijo"],
     gastos:DEFG.map((n,i)=>({n,c:PAL[i%PAL.length]})),
     ingresos:["Salario","Extra","Otro"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
@@ -507,7 +507,7 @@ function normInmueble(x){
 function normInmuebles(arr){ return Array.isArray(arr)?arr.map(normInmueble):[]; }
 function normList(arr,fallback){
   if(!Array.isArray(arr)||!arr.length) return fallback;
-  return arr.map((x,i)=> ({ n:(typeof x==="string"?x:(x.n||x.nombre||"—")), c:PAL[i%PAL.length], logo:(x&&typeof x==="object"&&typeof x.logo==="string")?x.logo.trim():"" }));
+  return arr.map((x,i)=> ({ n:(typeof x==="string"?x:(x.n||x.nombre||"—")), c:PAL[i%PAL.length], logo:(x&&typeof x==="object"&&typeof x.logo==="string")?x.logo.trim():"", limite:(x&&typeof x==="object"&&typeof x.limite==="number")?Math.max(0,x.limite):0 }));
 }
 function migrateCfg(pais,raw){
   const d=defaultCfg(pais);
@@ -519,6 +519,7 @@ function migrateCfg(pais,raw){
     tcFecha: typeof raw.tcFecha==="string"?raw.tcFecha:"",
     meta: typeof raw.meta==="number"?raw.meta:0,
     presupuesto: typeof raw.presupuesto==="number"?raw.presupuesto:0,
+    ingresoMensual: typeof raw.ingresoMensual==="number"?raw.ingresoMensual:0,
     personas: (Array.isArray(raw.personas)&&raw.personas.length)?raw.personas.slice():d.personas,
     gastos: normList(raw.gastos,d.gastos),
     ingresos: normList(raw.ingresos,d.ingresos),
@@ -650,6 +651,19 @@ function fijosCard(mesKey){
   h+=`</div>`; return h;
 }
 
+function limitesCard(base){
+  const conLimite=(cfg.gastos||[]).filter(c=>c.limite>0);
+  if(!conLimite.length) return "";
+  const by={}; base.forEach(t=>by[t.categoria]=(by[t.categoria]||0)+(+t.monto||0));
+  const rows=conLimite.map(c=>{
+    const gastado=by[c.n]||0, pct=Math.min(100,Math.round(gastado/c.limite*100));
+    const color=gastado>=c.limite?"var(--red)":(gastado/c.limite>=0.8?"var(--amber)":"var(--green)");
+    return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="color:var(--soft);font-size:12px;display:flex;align-items:center;gap:6px">${catIconHTML(c.n,18)} ${esc(c.n)}</span><span style="color:var(--ink);font-size:11.5px;font-weight:700">${money(gastado)} <span style="color:var(--dim);font-weight:400">/ ${money(c.limite)}</span></span></div>
+      <div class="bar"><i style="width:${pct}%;background:${color}"></i></div></div>`;
+  }).join("");
+  return `<div class="card" style="margin-bottom:11px"><div class="t">Alertas de gasto por categoría</div>${rows}</div>`;
+}
+
 /* ---------- filtros ---------- */
 function inPeriod(f){
   if(state.period==="total") return true;
@@ -690,12 +704,15 @@ function calIconHTML(){
   return `<svg viewBox="0 0 24 24" width="15" height="15" style="display:inline-block;vertical-align:-3px;margin-right:2px"><rect x="1" y="3" width="22" height="20" rx="4" fill="#fff"/><path d="M1 8h22" stroke="var(--red)" stroke-width="3"/><rect x="1" y="3" width="22" height="5" rx="3" fill="var(--red)"/><line x1="7" y1="1.5" x2="7" y2="5.5" stroke="var(--red)" stroke-width="2" stroke-linecap="round"/><line x1="17" y1="1.5" x2="17" y2="5.5" stroke="var(--red)" stroke-width="2" stroke-linecap="round"/><text x="12" y="18.5" font-size="10.5" font-weight="800" text-anchor="middle" fill="#16333a" font-family="inherit">${d}</text></svg>`;
 }
 function catLogo(nombre){ return catLogoMap[nombre]||""; }
+function isDomainLike(v){ return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test((v||"").trim()); }
 function catIconHTML(nombre,size){
   size=size||26;
-  const dom=catLogo(nombre);
+  const dom=(catLogo(nombre)||"").trim();
+  const esEmoji=dom&&!isDomainLike(dom);
   const fsz=Math.round(size*0.55);
   const fallback=`<span class="ic-fb" style="width:${size}px;height:${size}px;border-radius:8px;background:${catColor(nombre)}33;color:${catColor(nombre)};display:${dom?'none':'flex'};align-items:center;justify-content:center;font-size:${fsz}px;flex:none">${catIcon(nombre)}</span>`;
   if(!dom) return fallback;
+  if(esEmoji) return `<span class="ic-lg" style="width:${size}px;height:${size}px;border-radius:8px;background:${catColor(nombre)}33;display:flex;align-items:center;justify-content:center;font-size:${fsz}px;flex:none">${esc(dom)}</span>`;
   const img=`<span class="ic-lg" style="width:${size}px;height:${size}px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none"><img src="https://www.google.com/s2/favicons?sz=128&domain=${esc(dom)}" alt="" style="width:76%;height:76%;object-fit:contain" onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'"></span>`;
   return img+fallback;
 }
@@ -785,6 +802,7 @@ function renderPanel(){
     </div>`;
   }
   h+=fijosCard(state.mesRef);
+  h+=limitesCard(base);
   h+=`<div style="margin-bottom:11px">`+recientesCard()+`</div>`;
 
   // (las tarjetas de Ingresos/Gastos/Ahorros/Disponible se quitaron del Panel:
@@ -862,7 +880,12 @@ function metaCard(){
 function atencionCard(noVer,gas){
   const items=[];
   if(noVer) items.push([`<span class="dot" style="background:var(--red)"></span> ${noVer} movimiento${noVer===1?"":"s"} sin verificar`,`<span class="go" data-go="Movimientos">Revisar →</span>`]);
-  if(cfg.presupuesto>0){ if(gas>cfg.presupuesto) items.push([`<span class="dot" style="background:var(--red)"></span> Se pasó del presupuesto`,`<span class="go" data-go="Resumen">Ver →</span>`]); else items.push([`<span class="dot" style="background:var(--green)"></span> Vas bajo el presupuesto`,`<span style="color:var(--dim);font-size:11px">Bien</span>`]); }
+  if(cfg.presupuesto>0){
+    const pct=gas/cfg.presupuesto;
+    if(pct>=1) items.push([`<span class="dot" style="background:var(--red)"></span> Se pasó del presupuesto`,`<span class="go" data-go="Resumen">Ver →</span>`]);
+    else if(pct>=0.8) items.push([`<span class="dot" style="background:var(--amber)"></span> Vas en ${Math.round(pct*100)}% del presupuesto`,`<span class="go" data-go="Resumen">Ver →</span>`]);
+    else items.push([`<span class="dot" style="background:var(--green)"></span> Vas bajo el presupuesto`,`<span style="color:var(--dim);font-size:11px">Bien</span>`]);
+  }
   if(!items.length) items.push([`<span class="dot" style="background:var(--green)"></span> Todo al día`,`<span style="color:var(--dim);font-size:11px">✓</span>`]);
   let h=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span class="t" style="margin:0">Necesita tu atención</span><span style="color:var(--dim);font-size:11px">${items.length}</span></div>`;
   h+=items.map(([tx,go])=>`<div class="att"><span class="tx">${tx}</span>${go}</div>`).join("");
@@ -1314,7 +1337,13 @@ function renderSet(){
       </div>
       <div class="chk ${cfg.tcAuto!==false?'on':''}" id="setTcAuto" style="margin-bottom:9px"><span class="bx">✓</span><span>Actualizar automáticamente cada día</span></div>`;
   }
-  h+=`<div class="row" style="display:flex;gap:8px"><div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Presupuesto mensual</label><input class="field num" id="setPre" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.presupuesto||""}" placeholder="0"></div>
+  h+=`<label style="color:var(--muted);font-size:11px;margin-left:2px">Ingreso mensual del hogar (opcional)</label>
+    <input class="field num" id="setIngreso" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.ingresoMensual||""}" placeholder="0" style="margin-bottom:5px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px">
+      <span style="color:var(--dim);font-size:11px">Con esto se puede sugerir un presupuesto (regla 50/30/20)</span>
+      <span id="setSugerir" style="color:var(--accent2);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;margin-left:8px">Sugerir →</span>
+    </div>
+  <div class="row" style="display:flex;gap:8px"><div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Presupuesto mensual</label><input class="field num" id="setPre" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.presupuesto||""}" placeholder="0"></div>
     <div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Meta de ahorro</label><input class="field num" id="setMeta" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.meta||""}" placeholder="0"></div></div>
     <div class="set-add" id="setSaveGen">Guardar general</div></div>`;
 
@@ -1339,7 +1368,8 @@ function renderSet(){
   h+=`<div class="set-add" id="addPer">+ Agregar persona</div></div>`;
 
   $("viewSet").innerHTML=h;
-  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
+  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.ingresoMensual=Math.max(0,+$("setIngreso").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
+  if($("setSugerir"))$("setSugerir").onclick=()=>{ const ing=Math.max(0,+$("setIngreso").value||0); if(!ing){ $("setIngreso").focus(); return; } $("setPre").value=Math.round(ing*0.8); showToast("Sugerido: 80% del ingreso (necesidades + gustos, regla 50/30/20)"); };
   if($("setTcNow"))$("setTcNow").onclick=async()=>{ $("setTcNow").textContent="Actualizando…"; const ok=await fetchTipoCambio(); if(!ok){ $("setTcNow").textContent="Actualizar ahora"; alert("No se pudo obtener el tipo de cambio. Revise su conexión."); } };
   if($("setTcAuto"))$("setTcAuto").onclick=async()=>{ cfg.tcAuto=!(cfg.tcAuto!==false); await saveCfg(); renderSet(); };
   wireListSection("gastos"); wireListSection("ingresos"); wireListSection("ahorros");
@@ -1355,14 +1385,15 @@ function renderSet(){
 function setListSection(title,key){
   let h=`<div class="set-sec"><h3>${title}</h3>`;
   h+=cfg[key].map((c,i)=>`<div class="set-row"><span class="cdot" style="background:${c.c}"></span><input value="${esc(c.n)}" data-k="${key}" data-i="${i}" style="flex:1"><span class="x" data-delk="${key}" data-deli="${i}">✕</span></div>
-    <div class="set-row" style="margin-top:-4px"><span style="width:20px;height:20px;border-radius:6px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none" id="logop-${key}-${i}">${c.logo?`<img src="https://www.google.com/s2/favicons?sz=128&domain=${esc(c.logo)}" style="width:80%;height:80%;object-fit:contain" onerror="this.style.display='none'">`:`<span style="font-size:11px">•</span>`}</span><input value="${esc(c.logo||"")}" placeholder="Logo real: dominio web, ej. starbucks.com" data-logo="${key}" data-i="${i}" style="flex:1;font-size:12.5px"></div>`).join("");
+    <div class="set-row" style="margin-top:-4px"><span style="width:20px;height:20px;border-radius:6px;background:${c.logo&&!isDomainLike(c.logo)?'transparent':'#fff'};display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;font-size:12px" id="logop-${key}-${i}">${c.logo?(isDomainLike(c.logo)?`<img src="https://www.google.com/s2/favicons?sz=128&domain=${esc(c.logo)}" style="width:80%;height:80%;object-fit:contain" onerror="this.style.display='none'">`:esc(c.logo)):`<span style="font-size:11px">•</span>`}</span><input value="${esc(c.logo||"")}" placeholder="Dominio (starbucks.com) o pega un emoji 🛒" data-logo="${key}" data-i="${i}" style="flex:1;font-size:12.5px"></div>${key==="gastos"?`<div class="set-row" style="margin-top:-4px"><span style="color:var(--dim);font-size:11px;flex:none;width:78px">Límite/mes</span><input class="num" type="number" inputmode="decimal" step="0.01" min="0" value="${c.limite||""}" placeholder="Sin límite" data-lim="${i}" style="flex:1;font-size:12.5px"></div>`:""}`).join("");
   h+=`<div class="set-add" data-addk="${key}">+ Agregar</div></div>`; return h;
 }
 function wireListSection(key){
   $("viewSet").querySelectorAll(`[data-k="${key}"]`).forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.i; const old=cfg[key][i].n; const v=inp.value.trim(); if(!v){renderSet();return;} cfg[key][i].n=v; if(key==="gastos"||key==="ingresos"||key==="ahorros") tx.forEach(t=>{if(t.categoria===old)t.categoria=v;}); await saveCfg(); await saveTx(); });
   $("viewSet").querySelectorAll(`[data-delk="${key}"]`).forEach(b=>b.onclick=async()=>{ cfg[key].splice(+b.dataset.deli,1); await saveCfg(); renderSet(); });
   $("viewSet").querySelectorAll(`[data-logo="${key}"]`).forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.i; let v=inp.value.trim().toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0]; inp.value=v; cfg[key][i].logo=v; await saveCfg(); renderSet(); });
-  const add=$("viewSet").querySelector(`[data-addk="${key}"]`); if(add)add.onclick=async()=>{ cfg[key].push({n:"Nueva",c:PAL[cfg[key].length%PAL.length],logo:""}); await saveCfg(); renderSet(); };
+  $("viewSet").querySelectorAll(`[data-lim]`).forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.lim; cfg[key][i].limite=Math.max(0,+inp.value||0); await saveCfg(); });
+  const add=$("viewSet").querySelector(`[data-addk="${key}"]`); if(add)add.onclick=async()=>{ cfg[key].push({n:"Nueva",c:PAL[cfg[key].length%PAL.length],logo:"",limite:0}); await saveCfg(); renderSet(); };
 }
 function flashSaved(el){ const t=el.textContent; el.textContent="Guardado ✓"; setTimeout(()=>el.textContent=t,1200); }
 function showToast(msg){
