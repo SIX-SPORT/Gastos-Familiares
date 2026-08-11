@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Gastos de la Familia</title>
 <meta name="theme-color" content="#16333a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gastos">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -693,7 +696,7 @@ function catIconHTML(nombre,size){
   const fsz=Math.round(size*0.55);
   const fallback=`<span class="ic-fb" style="width:${size}px;height:${size}px;border-radius:8px;background:${catColor(nombre)}33;color:${catColor(nombre)};display:${dom?'none':'flex'};align-items:center;justify-content:center;font-size:${fsz}px;flex:none">${catIcon(nombre)}</span>`;
   if(!dom) return fallback;
-  const img=`<span class="ic-lg" style="width:${size}px;height:${size}px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none"><img src="https://logo.clearbit.com/${esc(dom)}?size=64" alt="" style="width:76%;height:76%;object-fit:contain" onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'"></span>`;
+  const img=`<span class="ic-lg" style="width:${size}px;height:${size}px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none"><img src="https://www.google.com/s2/favicons?sz=128&domain=${esc(dom)}" alt="" style="width:76%;height:76%;object-fit:contain" onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'"></span>`;
   return img+fallback;
 }
 
@@ -1352,7 +1355,7 @@ function renderSet(){
 function setListSection(title,key){
   let h=`<div class="set-sec"><h3>${title}</h3>`;
   h+=cfg[key].map((c,i)=>`<div class="set-row"><span class="cdot" style="background:${c.c}"></span><input value="${esc(c.n)}" data-k="${key}" data-i="${i}" style="flex:1"><span class="x" data-delk="${key}" data-deli="${i}">✕</span></div>
-    <div class="set-row" style="margin-top:-4px"><span style="width:20px;height:20px;border-radius:6px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none" id="logop-${key}-${i}">${c.logo?`<img src="https://logo.clearbit.com/${esc(c.logo)}?size=40" style="width:80%;height:80%;object-fit:contain" onerror="this.style.display='none'">`:`<span style="font-size:11px">•</span>`}</span><input value="${esc(c.logo||"")}" placeholder="Logo real: dominio web, ej. starbucks.com" data-logo="${key}" data-i="${i}" style="flex:1;font-size:12.5px"></div>`).join("");
+    <div class="set-row" style="margin-top:-4px"><span style="width:20px;height:20px;border-radius:6px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none" id="logop-${key}-${i}">${c.logo?`<img src="https://www.google.com/s2/favicons?sz=128&domain=${esc(c.logo)}" style="width:80%;height:80%;object-fit:contain" onerror="this.style.display='none'">`:`<span style="font-size:11px">•</span>`}</span><input value="${esc(c.logo||"")}" placeholder="Logo real: dominio web, ej. starbucks.com" data-logo="${key}" data-i="${i}" style="flex:1;font-size:12.5px"></div>`).join("");
   h+=`<div class="set-add" data-addk="${key}">+ Agregar</div></div>`; return h;
 }
 function wireListSection(key){
@@ -1681,10 +1684,11 @@ async function doLogin(){
   const em=$("email").value.trim(), pw=$("pass").value; $("loginErr").textContent="";
   if(!em||!pw){ $("loginErr").textContent="Escriba correo y contraseña."; return; }
   if(!auth){ $("loginErr").textContent="Sin conexión a Firebase."; return; }
-  try{ await signInWithEmailAndPassword(auth,em,pw); }
+  try{ await signInWithEmailAndPassword(auth,em,pw); try{ localStorage.setItem("gfEmail",em); }catch(e){} }
   catch(e){ $("loginErr").textContent = (e.code==="auth/invalid-credential"||e.code==="auth/wrong-password"||e.code==="auth/user-not-found") ? "Correo o contraseña incorrectos." : "Error al entrar. Intente de nuevo."; }
 }
 $("loginForm").addEventListener("submit",e=>{ e.preventDefault(); doLogin(); });
+try{ const rem=localStorage.getItem("gfEmail"); if(rem){ $("email").value=rem; setTimeout(()=>$("pass").focus(),50); } }catch(e){}
 
 if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
 </script>
