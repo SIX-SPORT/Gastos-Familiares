@@ -60,10 +60,8 @@
   .side .cty.on{background:rgba(231,250,77,.16);color:var(--accent);border-color:transparent}
   .side div[style*="border-top"]{border-color:rgba(255,255,255,.10) !important}
   .brand{display:flex;align-items:center;gap:9px;margin-bottom:14px}
-  .flag{width:24px;height:18px;border-radius:3px;flex:none}
-  .fl-CR{background:linear-gradient(#002b7f 0 16.6%,#fff 16.6% 33.3%,#ce1126 33.3% 66.6%,#fff 66.6% 83.3%,#002b7f 83.3% 100%)}
-  .fl-NI{background:linear-gradient(#0067c6 0 33.3%,#fff 33.3% 66.6%,#0067c6 66.6% 100%)}
-  .fl-ES{background:linear-gradient(#c60b1e 0 25%,#ffc400 25% 75%,#c60b1e 75% 100%)}
+  .flag{width:24px;height:18px;border-radius:3px;flex:none;display:flex;align-items:center;justify-content:center;overflow:hidden;background:rgba(255,255,255,.06);font-size:13px;line-height:1}
+
   .brand .nm{font-size:12.5px;font-weight:700;line-height:1.15}
   .brand .nm small{color:var(--muted);font-size:11px;font-weight:500}
   .sdisp{background:var(--accbg);border:1px solid var(--accbd);border-radius:12px;padding:10px 11px;margin-bottom:13px}
@@ -83,7 +81,7 @@
   .clabel{color:var(--dim);font-size:11px;margin:0 0 6px 10px}
   .cty{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12.5px;padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent;font-weight:600;margin-bottom:3px}
   .cty.on{background:var(--accbg);color:var(--ink);border-color:var(--accbd)}
-  .cty .flag{width:18px;height:13px}
+  .cty .flag{width:18px;height:13px;font-size:9px}
 
   .main{flex:1;min-width:0;padding:16px 18px 40px}
   .mtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
@@ -353,19 +351,20 @@
       <div class="fld"><label>Fecha</label><input class="field" type="date" id="fFecha"></div>
       <div class="fld"><label>Quién</label><select class="field" id="fQuien"></select></div>
     </div>
+    <div class="fld hidden" id="fQuienNuevoWrap" style="margin-bottom:9px"><input class="field" id="fQuienNuevo" placeholder="Nombre de la persona nueva, y Enter"></div>
     <div class="row">
       <div class="fld"><label>Categoría</label><select class="field" id="fCat"></select></div>
       <div class="fld"><label>Monto</label><input class="field num" type="text" inputmode="decimal" id="fMonto" placeholder="0"></div>
     </div>
     <div class="fld" style="margin-bottom:9px"><label>Descripción (opcional)</label><input class="field" id="fDesc" placeholder="Ej. compra semanal"></div>
+    <div class="fld hidden" id="fExtCurWrap" style="margin-bottom:9px">
+      <label>Moneda de este movimiento</label>
+      <div class="seg" id="fExtCur"><button data-c="local" class="on">₡</button><button data-c="usd">$</button></div>
+      <div id="fExtConv" style="color:var(--dim);font-size:11px;margin-top:5px"></div>
+    </div>
     <div class="chk" id="fVerif"><span class="bx">✓</span><span>Verificado</span></div>
     <div class="fld hidden" id="fFijoWrap" style="margin-top:9px"><div class="chk" id="fFijo"><span class="bx">✓</span><span>Es un gasto fijo (se repite cada mes)</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Los meses siguientes se creará solo con este monto y categoría, y aparecerá pendiente arriba en el Panel hasta marcarlo pagado.</div></div>
     <div class="fld hidden" id="fExternoWrap" style="margin-top:9px"><div class="chk" id="fExterno"><span class="bx">✓</span><span>Pagado desde otra cuenta</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Queda registrado, pero no se resta del Disponible de esta cuenta.</div>
-      <div class="fld hidden" id="fExtCurWrap" style="margin-top:9px">
-        <label>Moneda del pago</label>
-        <div class="seg" id="fExtCur"><button data-c="local" class="on">₡</button><button data-c="usd">$</button></div>
-        <div id="fExtConv" style="color:var(--dim);font-size:11px;margin-top:5px"></div>
-      </div>
     </div>
     <button class="save" id="mdSave">Guardar</button>
     <button class="del hidden" id="mdDel">Borrar</button>
@@ -462,11 +461,17 @@ function fechaLarga(f){ const [y,m,d]=f.split("-"); return d+" "+MES[+m-1]+" "+y
 function lastDayOfMonth(y,m){ return new Date(y,m+1,0).getDate(); } // m 0-based
 
 /* ---------- países / monedas ---------- */
-const CUR = {
+let CUR = {
   CR:{sym:"₡",code:"CRC",loc:"es-CR",dec:2,col:"hogar",usd:true,name:"Costa Rica",tc:520},
   NI:{sym:"C$",code:"NIO",loc:"es-NI",dec:2,col:"hogar_ni",usd:true,name:"Nicaragua",tc:36.8},
   ES:{sym:"€",code:"EUR",loc:"es-ES",dec:2,col:"hogar_es",usd:false,name:"España",tc:1}
 };
+const PAISES_BASE=["CR","NI","ES"];
+function flagEmoji(code){
+  const cc=String(code||"").toUpperCase().replace(/[^A-Z]/g,"").slice(0,2);
+  if(cc.length!==2) return "🏳️";
+  return String.fromCodePoint(...[...cc].map(c=>127397+c.charCodeAt(0)));
+}
 const PAL=["#8b5cf6","#f472b6","#60a5fa","#fbbf24","#fb7185","#22d3ee","#f59e0b","#34d399","#c084fc","#a78bfa","#4ade80","#94a3b8"];
 const DEFG=["Supermercado","Colegio","Cable/Internet","Gasolina","Restaurantes","Barbería","Salud","Transporte","Casa","Ropa","Servicios","Otros"];
 const CATICON={Supermercado:"🛒","Cable/Internet":"📶",Colegio:"🎓",Gasolina:"⛽",Restaurantes:"🍽️",Barbería:"💈",Salud:"➕",Transporte:"🚌",Casa:"🏠",Ropa:"👕",Servicios:"🔌",Salario:"💵",Extra:"💰",Otro:"•",Otros:"•",Ahorro:"🐷",Emergencia:"🛟"};
@@ -554,6 +559,37 @@ function startSync(){
     firstCfg=false; buildSidebar(); renderAll();
     checkTipoCambioDiario(state.pais);
   }, e=>console.warn(e));
+}
+
+/* ---------- lista de países (dinámica, editable en Ajustes) ---------- */
+let unsubPaises=null;
+function normPais(p){
+  return { name:String(p.name||p.id||"País"), sym:String(p.sym||"$"), code:String(p.code||"USD").toUpperCase(),
+    loc:String(p.loc||"es-419"), dec:(typeof p.dec==="number"?p.dec:2), usd:!!p.usd,
+    tc:Math.max(0.0001,+p.tc||1), col:String(p.col||("hogar_"+String(p.id||"x").toLowerCase())) };
+}
+function loadPaises(){
+  return new Promise(resolve=>{
+    const ref=doc(db,"meta","paises"); let first=true;
+    unsubPaises=onSnapshot(ref, s=>{
+      if(s.exists()&&Array.isArray(s.data().lista)&&s.data().lista.length){
+        const nuevo={}; s.data().lista.forEach(p=>{ if(p&&p.id) nuevo[String(p.id).toUpperCase()]=normPais(p); });
+        if(Object.keys(nuevo).length) CUR=nuevo;
+      } else if(first){
+        setDoc(ref,{lista:Object.keys(CUR).map(k=>({id:k,...CUR[k]}))}).catch(()=>{});
+      }
+      if(first){ first=false; resolve(); }
+      else {
+        if(!CUR[state.pais]) state.pais=Object.keys(CUR)[0]||"CR";
+        buildSidebar(); startPaisDataSync(); if(state.view==="Ajustes") renderSet(); else renderAll();
+      }
+    }, e=>{ console.warn("paises:",e); if(first){ first=false; resolve(); } });
+  });
+}
+async function savePaises(){
+  const ref=doc(db,"meta","paises");
+  const lista=Object.keys(CUR).map(k=>({ id:k, ...CUR[k] }));
+  try{ await setDoc(ref,{lista}); }catch(e){ console.warn("guardar países:",e); }
 }
 
 /* ---------- datos de los 3 países en paralelo (para el resumen combinado) ---------- */
@@ -724,7 +760,7 @@ function dispAcum(corte){ let s=0; for(const t of tx){ if(t.fecha<=corte){ if(t.
 function renderAll(){ buildColorMap(); buildSidebar(); if(state.view==="Panel")renderPanel(); else if(state.view==="Movimientos")renderMov(); else if(state.view==="Resumen")renderRes(); else if(state.view==="Inmuebles")renderInm(); else renderSet(); }
 
 function buildSidebar(){
-  $("sbFlag").className="flag fl-"+state.pais;
+  $("sbFlag").className="flag"; $("sbFlag").textContent=flagEmoji(state.pais);
   $("sbCty").textContent=CUR[state.pais].name;
   if($("mbHogar")) $("mbHogar").textContent=cfg.hogar||"Nuestro hogar";
   $("sbDisp").textContent=money(dispAcum(today()));
@@ -733,10 +769,10 @@ function buildSidebar(){
   $("perList").innerHTML=per.map(([v,l])=>`<span class="it${v===state.persona?' on':''}" data-p="${esc(v)}">${esc(l)}</span>`).join("");
   $("perList").querySelectorAll(".it").forEach(b=>b.onclick=()=>{state.persona=b.dataset.p;renderAll();});
   // países
-  $("ctyList").innerHTML=Object.keys(CUR).map(k=>`<span class="cty${k===state.pais?' on':''}" data-c="${k}"><span class="flag fl-${k}"></span>${CUR[k].name}</span>`).join("");
+  $("ctyList").innerHTML=Object.keys(CUR).map(k=>`<span class="cty${k===state.pais?' on':''}" data-c="${k}"><span class="flag">${flagEmoji(k)}</span>${esc(CUR[k].name)}</span>`).join("");
   $("ctyList").querySelectorAll(".cty").forEach(b=>b.onclick=()=>switchCountry(b.dataset.c));
   // mobile country avatar switcher
-  const mp=$("mbPaises"); if(mp){ mp.innerHTML=Object.keys(CUR).map(k=>`<button data-c="${k}" class="${k===state.pais?'on':''}" title="${CUR[k].name}"><span class="flag fl-${k}"></span></button>`).join(""); mp.querySelectorAll("button").forEach(b=>b.onclick=()=>switchCountry(b.dataset.c)); }
+  const mp=$("mbPaises"); if(mp){ mp.innerHTML=Object.keys(CUR).map(k=>`<button data-c="${k}" class="${k===state.pais?'on':''}" title="${esc(CUR[k].name)}"><span class="flag">${flagEmoji(k)}</span></button>`).join(""); mp.querySelectorAll("button").forEach(b=>b.onclick=()=>switchCountry(b.dataset.c)); }
   // fill modal person/cat
   fillModalSelects();
 }
@@ -927,7 +963,7 @@ function renderMov(){
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
       const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=t.tipo==="gasto"?"-":"+";
       h+=`<div class="tx-item" data-mv="${t.id}">${catIconHTML(t.categoria,30)}
-        <div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta${t.montoUsd?" ($"+t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})+")":""}</span>`:""}</div></div>
+        <div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta</span>`:""}${t.montoUsd?` · <span style="color:var(--accent2)">$${t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:""}</div></div>
         <span class="amt ${cls} num" style="font-size:13px">${sign}${money(t.monto)}</span>${t.verificado?'<span class="badge ok">✓</span>':'<span class="badge pend">pend.</span>'}</div>`;
     }
   }
@@ -962,7 +998,7 @@ function renderRes(){
   h+=Object.keys(CUR).map(k=>{
     const t=totalPaisMes(k,state.mesRef);
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)">
-      <span style="display:flex;align-items:center;gap:9px;color:var(--ink);font-size:13px;font-weight:600"><span class="flag fl-${k}" style="width:22px;height:16px"></span>${esc(CUR[k].name)}${k===state.pais?' <span style="color:var(--accent2);font-weight:400;font-size:11px">(actual)</span>':''}</span>
+      <span style="display:flex;align-items:center;gap:9px;color:var(--ink);font-size:13px;font-weight:600"><span class="flag" style="width:22px;height:16px">${flagEmoji(k)}</span>${esc(CUR[k].name)}${k===state.pais?' <span style="color:var(--accent2);font-weight:400;font-size:11px">(actual)</span>':''}</span>
       <span style="text-align:right"><span class="num" style="color:var(--ink);font-weight:700">${moneyFor(k,t.total)}</span><br><span style="color:var(--dim);font-size:10.5px">hogar ${moneyFor(k,t.hogar)} · inmuebles ${moneyFor(k,t.inm)}</span></span>
     </div>`;
   }).join("")+`</div>`;
@@ -1367,6 +1403,36 @@ function renderSet(){
   h+=cfg.personas.map((p,i)=>`<div class="set-row"><span class="cdot" style="background:${PAL[i%PAL.length]}"></span><input value="${esc(p)}" data-per="${i}"><span class="x" data-delper="${i}">✕</span></div>`).join("");
   h+=`<div class="set-add" id="addPer">+ Agregar persona</div></div>`;
 
+  // países (lista global, compartida entre todos)
+  h+=`<div class="set-sec"><h3>Países</h3>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:10px">Cada país tiene sus propios gastos, categorías e ingresos, totalmente separados. Esta lista se comparte entre todos los que usan la app.</div>`;
+  h+=Object.keys(CUR).map(k=>{ const p=CUR[k];
+    return `<div class="set-row" style="align-items:center"><span class="flag">${flagEmoji(k)}</span>
+      <input value="${esc(p.name)}" data-pn="${k}" placeholder="Nombre" style="flex:1.3">
+      <input value="${esc(p.sym)}" data-psym="${k}" placeholder="Símbolo" style="width:44px;flex:none;text-align:center">
+      <input value="${esc(p.code)}" data-pcode="${k}" placeholder="CRC" style="width:56px;flex:none;text-align:center">
+      ${!PAISES_BASE.includes(k)?`<span class="x" data-delpais="${k}">✕</span>`:""}
+    </div>
+    <div class="set-row" style="margin-top:-4px">
+      <div class="chk ${p.usd?'on':''}" data-pusd="${k}" style="flex:none"><span class="bx">✓</span><span style="font-size:11px">Maneja pagos en $</span></div>
+      ${p.usd?`<input class="num" type="number" step="0.0001" min="0" value="${p.tc}" data-ptc="${k}" placeholder="Tipo de cambio a USD" style="flex:1;font-size:12px">`:""}
+    </div>`;
+  }).join("");
+  h+=`<div class="set-add" id="addPaisToggle">+ Agregar país</div>
+    <div id="addPaisForm" class="hidden" style="margin-top:9px;padding:11px;border:1px dashed var(--cardb);border-radius:14px">
+      <input class="field" id="npName" placeholder="Nombre, ej. México" style="margin-bottom:7px">
+      <div style="display:flex;gap:7px;margin-bottom:7px">
+        <input class="field" id="npCode" placeholder="Código, ej. MX" maxlength="4" style="flex:1">
+        <input class="field" id="npSym" placeholder="Símbolo, ej. $" style="flex:1">
+      </div>
+      <div style="display:flex;gap:7px;margin-bottom:7px">
+        <input class="field" id="npCur" placeholder="Moneda ISO, ej. MXN" style="flex:1">
+        <input class="field num" id="npTc" type="number" step="0.0001" min="0" placeholder="Tipo de cambio a USD" style="flex:1">
+      </div>
+      <div class="chk" id="npUsd" style="margin-bottom:10px"><span class="bx">✓</span><span>Este país también maneja pagos en dólares</span></div>
+      <div class="set-add" id="npSave">Guardar país nuevo</div>
+    </div></div>`;
+
   $("viewSet").innerHTML=h;
   $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.ingresoMensual=Math.max(0,+$("setIngreso").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
   if($("setSugerir"))$("setSugerir").onclick=()=>{ const ing=Math.max(0,+$("setIngreso").value||0); if(!ing){ $("setIngreso").focus(); return; } $("setPre").value=Math.round(ing*0.8); showToast("Sugerido: 80% del ingreso (necesidades + gustos, regla 50/30/20)"); };
@@ -1381,6 +1447,23 @@ function renderSet(){
   $("viewSet").querySelectorAll("[data-per]").forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.per; const old=cfg.personas[i]; const v=inp.value.trim(); if(!v){renderSet();return;} cfg.personas[i]=v; tx.forEach(t=>{if(t.quien===old)t.quien=v;}); await saveCfg(); await saveTx(); });
   $("viewSet").querySelectorAll("[data-delper]").forEach(b=>b.onclick=async()=>{ if(cfg.personas.length<=1)return; cfg.personas.splice(+b.dataset.delper,1); await saveCfg(); renderSet(); buildSidebar(); });
   $("addPer").onclick=async()=>{ cfg.personas.push("Nueva persona"); await saveCfg(); renderSet(); buildSidebar(); };
+
+  $("viewSet").querySelectorAll("[data-pn]").forEach(i=>i.onchange=async()=>{ CUR[i.dataset.pn].name=i.value.trim()||i.dataset.pn; await savePaises(); buildSidebar(); });
+  $("viewSet").querySelectorAll("[data-psym]").forEach(i=>i.onchange=async()=>{ CUR[i.dataset.psym].sym=i.value.trim()||"$"; await savePaises(); renderAll(); });
+  $("viewSet").querySelectorAll("[data-pcode]").forEach(i=>i.onchange=async()=>{ CUR[i.dataset.pcode].code=i.value.trim().toUpperCase()||"USD"; await savePaises(); renderAll(); });
+  $("viewSet").querySelectorAll("[data-ptc]").forEach(i=>i.onchange=async()=>{ CUR[i.dataset.ptc].tc=Math.max(0.0001,+i.value||1); await savePaises(); });
+  $("viewSet").querySelectorAll("[data-pusd]").forEach(el=>el.onclick=async()=>{ const k=el.dataset.pusd; CUR[k].usd=!CUR[k].usd; await savePaises(); renderSet(); });
+  $("viewSet").querySelectorAll("[data-delpais]").forEach(el=>el.onclick=async()=>{ const k=el.dataset.delpais; if(!confirm(`¿Quitar "${CUR[k].name}" de la lista de países? Sus datos no se borran, pero dejará de aparecer.`))return; if(k===state.pais) switchCountry(PAISES_BASE[0]); delete CUR[k]; await savePaises(); renderSet(); buildSidebar(); });
+  if($("addPaisToggle"))$("addPaisToggle").onclick=()=>{ $("addPaisForm").classList.toggle("hidden"); };
+  if($("npUsd"))$("npUsd").onclick=()=>{ $("npUsd").classList.toggle("on"); };
+  if($("npSave"))$("npSave").onclick=async()=>{
+    const id=$("npCode").value.trim().toUpperCase().replace(/[^A-Z]/g,"").slice(0,4);
+    if(!id){ $("npCode").focus(); return; }
+    if(CUR[id]){ alert("Ya existe un país con ese código."); return; }
+    CUR[id]={ name:$("npName").value.trim()||id, sym:$("npSym").value.trim()||"$", code:($("npCur").value.trim().toUpperCase()||"USD"),
+      loc:"es-419", dec:2, usd:$("npUsd").classList.contains("on"), tc:Math.max(0.0001,+$("npTc").value||1), col:"hogar_"+id.toLowerCase() };
+    await savePaises(); renderSet(); buildSidebar();
+  };
 }
 function setListSection(title,key){
   let h=`<div class="set-sec"><h3>${title}</h3>`;
@@ -1408,23 +1491,34 @@ function showToast(msg){
 
 /* ============================ MODAL ============================ */
 function fillModalSelects(){
-  $("fQuien").innerHTML=cfg.personas.map(p=>`<option>${esc(p)}</option>`).join("");
+  $("fQuien").innerHTML=cfg.personas.map(p=>`<option>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
+  $("fQuien").onchange=()=>{
+    if($("fQuien").value==="__nueva__"){ $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").value=""; setTimeout(()=>$("fQuienNuevo").focus(),30); }
+    else { $("fQuienNuevoWrap").classList.add("hidden"); }
+  };
+  $("fQuienNuevo").onkeydown=async e=>{
+    if(e.key!=="Enter") return; e.preventDefault();
+    const v=$("fQuienNuevo").value.trim(); if(!v) return;
+    if(!cfg.personas.includes(v)){ cfg.personas.push(v); await saveCfg(); buildSidebar(); }
+    $("fQuien").innerHTML=cfg.personas.map(p=>`<option ${p===v?"selected":""}>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
+    $("fQuienNuevoWrap").classList.add("hidden");
+  };
   fillCat();
 }
 function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros; $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join(""); }
 function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); $("fFijoWrap").classList.toggle("hidden",t!=="gasto"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); mdFijo=false; $("fFijo").classList.remove("on"); } updateExtCurUI(); }
 let mdVerif=false, mdExterno=false, mdExtCur="local", mdFijo=false;
 function updateExtCurUI(){
-  const show=mdExterno && CUR[state.pais].usd;
+  const show=CUR[state.pais].usd;
   $("fExtCurWrap").classList.toggle("hidden",!show);
   if(!show){ mdExtCur="local"; }
   $("fExtCur").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.c===mdExtCur));
   const v=parseMonto($("fMonto").value);
   $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+(Math.round(v*rate()*100)/100).toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})) : "";
 }
-function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden");
+function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden");
   setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdFijo=false; $("fFijo").classList.remove("on"); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
-window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden");
+window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden"); $("fQuienNuevoWrap").classList.add("hidden");
   setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo);
   mdExtCur=(t.montoUsd?"usd":"local"); $("fMonto").value=(mdExtCur==="usd"?t.montoUsd:t.monto); updateExtCurUI(); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
@@ -1602,7 +1696,7 @@ function renderCx(){
 }
 async function saveModal(){
   const raw=parseMonto($("fMonto").value); if(!raw||raw<=0||isNaN(raw)){ $("fMonto").focus(); return; }
-  const usarUsd=(state.tab==="gasto"&&mdExterno&&mdExtCur==="usd"&&CUR[state.pais].usd);
+  const usarUsd=(mdExtCur==="usd"&&CUR[state.pais].usd);
   const monto=usarUsd?Math.round(raw*rate()*100)/100:Math.abs(raw);
   const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto, descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno), montoUsd:usarUsd?Math.abs(raw):null };
   let t;
@@ -1636,7 +1730,7 @@ $("perHd").onclick=()=>{ const l=$("perList"); const open=l.style.display!=="non
 $("fab").onclick=openAdd; if($("navAddBtn"))$("navAddBtn").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=saveModal; $("mdDel").onclick=delModal;
 $("fExterno").onclick=()=>{ mdExterno=!mdExterno; $("fExterno").classList.toggle("on",mdExterno); updateExtCurUI(); };
 $("fExtCur").querySelectorAll("button").forEach(b=>b.onclick=()=>{ mdExtCur=b.dataset.c; updateExtCurUI(); });
-$("fMonto").addEventListener("input",()=>{ if(mdExterno&&mdExtCur==="usd")updateExtCurUI(); });
+$("fMonto").addEventListener("input",()=>{ if(mdExtCur==="usd")updateExtCurUI(); });
 $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",mdVerif); };
 $("fFijo").onclick=()=>{ mdFijo=!mdFijo; $("fFijo").classList.toggle("on",mdFijo); };
 ["gasto","ingreso","ahorro"].forEach(x=>{ $("t"+x[0].toUpperCase()+x.slice(1)).onclick=()=>setModalTipo(x); });
@@ -1705,9 +1799,9 @@ if($("btnRefresh")) $("btnRefresh").onclick=()=>refrescarApp();
 
 /* ============================ LOGIN ============================ */
 if(auth){
-  onAuthStateChanged(auth,user=>{
+  onAuthStateChanged(auth,async user=>{
     $("splash").classList.add("hidden");
-    if(user){ $("login").classList.add("hidden"); $("app").classList.remove("hidden"); startSync(); startPaisDataSync(); }
+    if(user){ $("login").classList.add("hidden"); $("app").classList.remove("hidden"); await loadPaises(); startSync(); startPaisDataSync(); }
     else { $("app").classList.add("hidden"); $("login").classList.remove("hidden"); }
   });
 } else { $("splash").classList.add("hidden"); $("login").classList.remove("hidden"); $("loginErr").textContent="No se pudo conectar a Firebase. Revise config.js"; }
