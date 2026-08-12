@@ -351,7 +351,10 @@
       <div class="fld"><label>Fecha</label><input class="field" type="date" id="fFecha"></div>
       <div class="fld"><label>Quién</label><div style="display:flex;gap:6px;align-items:center"><select class="field" id="fQuien" style="flex:1"></select><span id="fQuienEdit" title="Cambiar nombre" style="cursor:pointer;color:var(--dim);font-size:16px;padding:4px 2px;flex:none">✎</span></div></div>
     </div>
-    <div class="fld hidden" id="fQuienNuevoWrap" style="margin-bottom:9px"><input class="field" id="fQuienNuevo" placeholder="Nombre de la persona nueva, y Enter"></div>
+    <div class="fld hidden" id="fQuienNuevoWrap" style="margin-bottom:9px;display:flex;gap:7px;align-items:flex-end">
+      <input class="field" id="fQuienNuevo" placeholder="Nombre, y confirmá" style="flex:1">
+      <button type="button" id="fQuienNuevoOk" style="flex:none;height:44px;padding:0 16px;border-radius:12px;background:var(--accent2);color:var(--bg);font-weight:700;border:none">OK</button>
+    </div>
     <div class="row">
       <div class="fld"><label>Categoría</label><select class="field" id="fCat"></select></div>
       <div class="fld"><label>Monto</label><input class="field num" type="text" inputmode="decimal" id="fMonto" placeholder="0"></div>
@@ -1492,18 +1495,20 @@ function showToast(msg){
 /* ============================ MODAL ============================ */
 let mdQuienEditOld=null;
 function fillModalSelects(){
+  const enEdicion=$("fQuienNuevoWrap")&&!$("fQuienNuevoWrap").classList.contains("hidden");
+  if(!enEdicion){
   $("fQuien").innerHTML=cfg.personas.map(p=>`<option>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
   $("fQuien").onchange=()=>{
     mdQuienEditOld=null; $("fQuienNuevoWrap").classList.add("hidden");
-    if($("fQuien").value==="__nueva__"){ $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nombre de la persona nueva, y Enter"; $("fQuienNuevo").value=""; setTimeout(()=>$("fQuienNuevo").focus(),30); }
+    if($("fQuien").value==="__nueva__"){ $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nombre de la persona nueva, y confirmá"; $("fQuienNuevo").value=""; setTimeout(()=>$("fQuienNuevo").focus(),30); }
   };
   $("fQuienEdit").onclick=()=>{
     const v=$("fQuien").value; if(!v||v==="__nueva__") return;
-    mdQuienEditOld=v; $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nuevo nombre para \""+v+"\", y Enter"; $("fQuienNuevo").value=v;
+    mdQuienEditOld=v; $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nuevo nombre para \""+v+"\""; $("fQuienNuevo").value=v;
     setTimeout(()=>{ $("fQuienNuevo").focus(); $("fQuienNuevo").select(); },30);
   };
-  $("fQuienNuevo").onkeydown=async e=>{
-    if(e.key!=="Enter") return; e.preventDefault();
+  }
+  async function commitQuienInput(){
     const v=$("fQuienNuevo").value.trim(); if(!v) return;
     if(mdQuienEditOld && mdQuienEditOld!==v){
       const old=mdQuienEditOld, i=cfg.personas.indexOf(old);
@@ -1512,7 +1517,9 @@ function fillModalSelects(){
     mdQuienEditOld=null;
     $("fQuien").innerHTML=cfg.personas.map(p=>`<option ${p===v?"selected":""}>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
     $("fQuienNuevoWrap").classList.add("hidden");
-  };
+  }
+  $("fQuienNuevo").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); commitQuienInput(); } };
+  $("fQuienNuevoOk").onclick=e=>{ e.preventDefault(); commitQuienInput(); };
   fillCat();
 }
 function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros; $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join(""); }
