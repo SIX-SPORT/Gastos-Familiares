@@ -349,7 +349,7 @@
     </div>
     <div class="row">
       <div class="fld"><label>Fecha</label><input class="field" type="date" id="fFecha"></div>
-      <div class="fld"><label>Quién</label><select class="field" id="fQuien"></select></div>
+      <div class="fld"><label>Quién</label><div style="display:flex;gap:6px;align-items:center"><select class="field" id="fQuien" style="flex:1"></select><span id="fQuienEdit" title="Cambiar nombre" style="cursor:pointer;color:var(--dim);font-size:16px;padding:4px 2px;flex:none">✎</span></div></div>
     </div>
     <div class="fld hidden" id="fQuienNuevoWrap" style="margin-bottom:9px"><input class="field" id="fQuienNuevo" placeholder="Nombre de la persona nueva, y Enter"></div>
     <div class="row">
@@ -1490,16 +1490,26 @@ function showToast(msg){
 }
 
 /* ============================ MODAL ============================ */
+let mdQuienEditOld=null;
 function fillModalSelects(){
   $("fQuien").innerHTML=cfg.personas.map(p=>`<option>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
   $("fQuien").onchange=()=>{
-    if($("fQuien").value==="__nueva__"){ $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").value=""; setTimeout(()=>$("fQuienNuevo").focus(),30); }
-    else { $("fQuienNuevoWrap").classList.add("hidden"); }
+    mdQuienEditOld=null; $("fQuienNuevoWrap").classList.add("hidden");
+    if($("fQuien").value==="__nueva__"){ $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nombre de la persona nueva, y Enter"; $("fQuienNuevo").value=""; setTimeout(()=>$("fQuienNuevo").focus(),30); }
+  };
+  $("fQuienEdit").onclick=()=>{
+    const v=$("fQuien").value; if(!v||v==="__nueva__") return;
+    mdQuienEditOld=v; $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nuevo nombre para \""+v+"\", y Enter"; $("fQuienNuevo").value=v;
+    setTimeout(()=>{ $("fQuienNuevo").focus(); $("fQuienNuevo").select(); },30);
   };
   $("fQuienNuevo").onkeydown=async e=>{
     if(e.key!=="Enter") return; e.preventDefault();
     const v=$("fQuienNuevo").value.trim(); if(!v) return;
-    if(!cfg.personas.includes(v)){ cfg.personas.push(v); await saveCfg(); buildSidebar(); }
+    if(mdQuienEditOld && mdQuienEditOld!==v){
+      const old=mdQuienEditOld, i=cfg.personas.indexOf(old);
+      if(i>-1){ cfg.personas[i]=v; tx.forEach(t=>{if(t.quien===old)t.quien=v;}); await saveCfg(); await saveTx(); buildSidebar(); }
+    } else if(!mdQuienEditOld && !cfg.personas.includes(v)){ cfg.personas.push(v); await saveCfg(); buildSidebar(); }
+    mdQuienEditOld=null;
     $("fQuien").innerHTML=cfg.personas.map(p=>`<option ${p===v?"selected":""}>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
     $("fQuienNuevoWrap").classList.add("hidden");
   };
@@ -1516,9 +1526,9 @@ function updateExtCurUI(){
   const v=parseMonto($("fMonto").value);
   $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+(Math.round(v*rate()*100)/100).toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})) : "";
 }
-function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden");
+function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
   setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdFijo=false; $("fFijo").classList.remove("on"); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
-window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden"); $("fQuienNuevoWrap").classList.add("hidden");
+window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
   setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo);
   mdExtCur=(t.montoUsd?"usd":"local"); $("fMonto").value=(mdExtCur==="usd"?t.montoUsd:t.monto); updateExtCurUI(); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
