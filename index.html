@@ -369,6 +369,8 @@
     <div class="fld hidden" id="fFijoWrap" style="margin-top:9px"><div class="chk" id="fFijo"><span class="bx">✓</span><span>Es un gasto fijo (se repite cada mes)</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Los meses siguientes se creará solo con este monto y categoría, y aparecerá pendiente arriba en el Panel hasta marcarlo pagado.</div></div>
     <div class="fld hidden" id="fExternoWrap" style="margin-top:9px"><div class="chk" id="fExterno"><span class="bx">✓</span><span>Pagado desde otra cuenta</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Queda registrado, pero no se resta del Disponible de esta cuenta.</div>
     </div>
+    <div class="fld hidden" id="fRetiroWrap" style="margin-top:9px"><div class="chk" id="fRetiro"><span class="bx">✓</span><span>Es un retiro (vuelve a esta cuenta de gastos)</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Se suma de vuelta al Disponible y se resta del total ahorrado.</div>
+    </div>
     <button class="save" id="mdSave">Guardar</button>
     <button class="del hidden" id="mdDel">Borrar</button>
     <button class="cancel" id="mdCancel">Cancelar</button>
@@ -723,6 +725,7 @@ function endOfPeriod(){
 }
 const sum = arr => arr.reduce((s,t)=>s+(+t.monto||0),0);
 function sumType(list,tipo){ return sum(list.filter(t=>t.tipo===tipo)); }
+function ahorroNeto(list){ return list.filter(t=>t.tipo==="ahorro").reduce((s,t)=>s+(t.retiro?-1:1)*(+t.monto||0),0); }
 let catColorMap={};
 let catLogoMap={};
 function buildColorMap(){
@@ -757,7 +760,7 @@ function catIconHTML(nombre,size){
 }
 
 /* Disponible acumulado (arrastra sobrante): ingresos - gastos con fecha <= corte */
-function dispAcum(corte){ let s=0; for(const t of tx){ if(t.fecha<=corte){ if(t.tipo==="ingreso")s+=(+t.monto||0); else if(t.tipo==="gasto"&&!t.externo)s-=(+t.monto||0); } } return s; }
+function dispAcum(corte){ let s=0; for(const t of tx){ if(t.fecha<=corte){ if(t.tipo==="ingreso")s+=(+t.monto||0); else if(t.tipo==="gasto"&&!t.externo)s-=(+t.monto||0); else if(t.tipo==="ahorro")s+=(t.retiro?1:-1)*(+t.monto||0); } } return s; }
 
 /* ---------- render raíz ---------- */
 function renderAll(){ buildColorMap(); buildSidebar(); if(state.view==="Panel")renderPanel(); else if(state.view==="Movimientos")renderMov(); else if(state.view==="Resumen")renderRes(); else if(state.view==="Inmuebles")renderInm(); else renderSet(); }
@@ -789,7 +792,7 @@ function monthTitle(){ if(state.period==="mes")return mesRefLabel(); if(state.pe
 function renderPanel(){
   ensureFijosMes(state.mesRef);
   const per=periodSet();
-  const ing=sumType(per,"ingreso"), gas=sumType(per,"gasto"), aho=sumType(per,"ahorro");
+  const ing=sumType(per,"ingreso"), gas=sumType(per,"gasto"), aho=ahorroNeto(per);
   const disp=dispAcum(endOfPeriod());
   // arrastre = acumulado hasta fin del mes anterior al mes visto
   const prevEnd=ymd(new Date(mesRefY(),mesRefM(),0));
@@ -818,20 +821,23 @@ function renderPanel(){
   // barra de balance: entró vs gastado del período visible (día/semana/mes/año/total), NO acumulado histórico
   const totIng=ing;
   const totGasAll=sum(per.filter(t=>t.tipo==="gasto"&&!t.externo));
-  const queda=totIng-totGasAll;
+  const totAho=ahorroNeto(per);
+  const queda=totIng-totGasAll-totAho;
   const extList=per.filter(t=>t.tipo==="gasto"&&t.externo).sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:0);
   const totExt=sum(extList);
   {
-    const pg=totIng>0?Math.min(100,Math.round(totGasAll/totIng*100)):(totGasAll>0?100:0);
-    const pq=Math.max(0,100-pg);
+    const den=totIng>0?totIng:Math.max(1,totGasAll+Math.max(0,totAho));
+    const pg=Math.min(100,Math.round(totGasAll/den*100));
+    const pa=Math.max(0,Math.min(100-pg,Math.round(Math.max(0,totAho)/den*100)));
+    const pq=Math.max(0,100-pg-pa);
     h+=`<div class="card balbar" style="margin-bottom:11px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:11px;flex-wrap:wrap">
         <div><div class="bl">Entró</div><div class="bv" style="color:var(--green)">${money(totIng)}</div></div>
         <div style="text-align:center"><div class="bl">Gastado</div><div class="bv" style="color:var(--red)">${money(totGasAll)}</div></div>
         <div style="text-align:right"><div class="bl" style="color:var(--accent2)">Disponible del mes</div><div class="bv" style="color:${queda>=0?'var(--ink)':'var(--red)'}">${money(queda)}</div></div>
       </div>
-      <div class="balrow"><div style="width:${pq}%;background:var(--green)"></div><div style="width:${pg}%;background:var(--red)"></div></div>
-      <div style="display:flex;justify-content:space-between;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Disponible ${pq}%</span><span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
+      <div class="balrow"><div style="width:${pq}%;background:var(--green)"></div><div style="width:${pa}%;background:var(--blue)"></div><div style="width:${pg}%;background:var(--red)"></div></div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Disponible ${pq}%</span>${totAho?`<span style="color:var(--blue);font-size:11px"><span class="dot" style="background:var(--blue)"></span> ${totAho>=0?"Ahorrado":"Retirado de ahorro"} ${money(Math.abs(totAho))}</span>`:""}<span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
       ${extList.length?`<div style="border-top:1px solid rgba(255,255,255,.06);margin-top:10px;padding-top:9px">
         <div style="color:var(--dim);font-size:11px;margin-bottom:6px">🏦 Pagado desde otra cuenta (no incluido arriba)</div>
         ${extList.slice(0,4).map(t=>`<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:2px 0"><span style="color:var(--soft)">${esc(t.descripcion||t.categoria)}</span><span style="color:var(--soft);font-weight:700">${money(t.monto)}</span></div>`).join("")}
@@ -906,7 +912,7 @@ function wireCurToggle(){
 }
 function metaCard(){
   if(cfg.meta>0){
-    const acumAho=sum(tx.filter(t=>t.tipo==="ahorro"));
+    const acumAho=ahorroNeto(tx);
     const pct=Math.min(100,Math.round(acumAho/cfg.meta*100));
     const C=263.9, dash=(pct/100*C).toFixed(1), rest=(C-dash).toFixed(1);
     return `<div class="card" style="display:flex;flex-direction:column;align-items:center"><div class="t" style="align-self:flex-start">Meta de ahorro</div>
@@ -942,7 +948,7 @@ function recientesCard(){
   const recent=tx.filter(t=>t.tipo!=="fijo").slice().sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(a.id<b.id?1:-1)).slice(0,4);
   let h=`<div class="card card-dark"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px"><span class="t" style="margin:0">Movimientos recientes</span><span class="go" data-go="Movimientos" style="font-size:11px;cursor:pointer">Ver todos</span></div>`;
   if(!recent.length) h+=`<div class="empty">Sin movimientos aún.</div>`;
-  else h+=recent.map(t=>{const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g";const sign=t.tipo==="gasto"?"-":"+";return `<div class="mv" data-mv="${t.id}">${catIconHTML(t.categoria,26)}<div class="mid"><div class="d">${esc(t.descripcion||t.categoria)}</div><div class="s">${esc(t.quien||"")} · ${fechaLarga(t.fecha).replace(/ \d{4}$/,"")}</div></div><span class="amt ${cls} num">${sign}${money(t.monto)}</span></div>`;}).join("");
+  else h+=recent.map(t=>{const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g";const sign=(t.tipo==="gasto"||(t.tipo==="ahorro"&&t.retiro))?"-":"+";return `<div class="mv" data-mv="${t.id}">${catIconHTML(t.categoria,26)}<div class="mid"><div class="d">${esc(t.descripcion||t.categoria)}${t.tipo==="ahorro"&&t.retiro?` <span style="color:var(--blue)">· retiro</span>`:""}</div><div class="s">${esc(t.quien||"")} · ${fechaLarga(t.fecha).replace(/ \d{4}$/,"")}</div></div><span class="amt ${cls} num">${sign}${money(t.monto)}</span></div>`;}).join("");
   h+=`</div>`; return h;
 }
 
@@ -964,9 +970,9 @@ function renderMov(){
   if(!set.length){ h+=`<div class="empty" style="padding:40px 10px">🧾<br>No hay movimientos en ${esc(movLabel.toLowerCase())}.<br>Toque <b>+</b> para agregar.</div>`; }
   else{ let last="";
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
-      const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=t.tipo==="gasto"?"-":"+";
+      const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=(t.tipo==="gasto"||(t.tipo==="ahorro"&&t.retiro))?"-":"+";
       h+=`<div class="tx-item" data-mv="${t.id}">${catIconHTML(t.categoria,30)}
-        <div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta</span>`:""}${t.montoUsd?` · <span style="color:var(--accent2)">$${t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:""}</div></div>
+        <div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta</span>`:""}${t.tipo==="ahorro"&&t.retiro?` · <span style="color:var(--blue)">Retiro de ahorro</span>`:""}${t.montoUsd?` · <span style="color:var(--accent2)">$${t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:""}</div></div>
         <span class="amt ${cls} num" style="font-size:13px">${sign}${money(t.monto)}</span>${t.verificado?'<span class="badge ok">✓</span>':'<span class="badge pend">pend.</span>'}</div>`;
     }
   }
@@ -985,7 +991,7 @@ function renderMov(){
 /* ============================ RESUMEN ============================ */
 function renderRes(){
   const per=tx.filter(t=>t.fecha.slice(0,7)===state.mesRef);
-  const ing=sumType(per,"ingreso"),gas=sumType(per,"gasto"),aho=sumType(per,"ahorro");
+  const ing=sumType(per,"ingreso"),gas=sumType(per,"gasto"),aho=ahorroNeto(per);
   const savedP=state.period; state.period="mes"; const disp=dispAcum(endOfPeriod()); state.period=savedP;
   let h=`<div class="mtop"><div><h2>Resumen</h2><div class="sub">${mesRefLabel()}</div></div><div class="toolr mtophide">${CUR[state.pais].usd?`<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>`:""}</div></div>`;
   h+=`<button class="cxbtn" id="btnPdfResumen" style="margin-bottom:12px">📄 Descargar resumen del mes (PDF)</button>`;
@@ -1523,8 +1529,8 @@ function fillModalSelects(){
   fillCat();
 }
 function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros; $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join(""); }
-function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); $("fFijoWrap").classList.toggle("hidden",t!=="gasto"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); mdFijo=false; $("fFijo").classList.remove("on"); } updateExtCurUI(); }
-let mdVerif=false, mdExterno=false, mdExtCur="local", mdFijo=false;
+function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); $("fFijoWrap").classList.toggle("hidden",t!=="gasto"); $("fRetiroWrap").classList.toggle("hidden",t!=="ahorro"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); mdFijo=false; $("fFijo").classList.remove("on"); } if(t!=="ahorro"){ mdRetiro=false; $("fRetiro").classList.remove("on"); } updateExtCurUI(); }
+let mdVerif=false, mdExterno=false, mdExtCur="local", mdFijo=false, mdRetiro=false;
 function updateExtCurUI(){
   const show=CUR[state.pais].usd;
   $("fExtCurWrap").classList.toggle("hidden",!show);
@@ -1536,18 +1542,18 @@ function updateExtCurUI(){
 function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
   setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdFijo=false; $("fFijo").classList.remove("on"); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
-  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo);
+  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo); mdRetiro=!!t.retiro; $("fRetiro").classList.toggle("on",mdRetiro);
   mdExtCur=(t.montoUsd?"usd":"local"); $("fMonto").value=(mdExtCur==="usd"?t.montoUsd:t.monto); updateExtCurUI(); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
 const TIPO_DET={ingreso:{lbl:"Ingresos",col:"var(--green)",sg:"+"},gasto:{lbl:"Gastos",col:"var(--red)",sg:"-"},ahorro:{lbl:"Ahorros",col:"var(--blue)",sg:"+"}};
 window.openDetalle=tipo=>{
   const info=TIPO_DET[tipo]; if(!info)return;
   const list=tx.filter(t=>t.tipo===tipo && t.fecha.slice(0,7)===state.mesRef).sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:0);
-  const total=sum(list);
+  const total=tipo==="ahorro"?ahorroNeto(list):sum(list);
   $("dtTitle").textContent=info.lbl+" · "+mesRefLabel();
-  $("dtSub").innerHTML=`<span style="color:${info.col};font-weight:700">Total ${money(total)}</span> · ${list.length} movimiento${list.length===1?"":"s"}`;
+  $("dtSub").innerHTML=`<span style="color:${info.col};font-weight:700">${tipo==="ahorro"?"Neto":"Total"} ${money(total)}</span> · ${list.length} movimiento${list.length===1?"":"s"}`;
   if(!list.length){ $("dtList").innerHTML=`<div class="empty">No hay ${info.lbl.toLowerCase()} en ${esc(mesRefLabel())}.</div>`; }
-  else { $("dtList").innerHTML=list.map(t=>`<div class="dtrow" data-mv="${t.id}">${catIconHTML(t.categoria,30)}<div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:14px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:12px">${esc(t.quien||"")} · ${esc(fechaLarga(t.fecha))}</div></div><span style="color:${info.col};font-size:14px;font-weight:700;white-space:nowrap">${info.sg}${money(t.monto)}</span></div>`).join(""); }
+  else { $("dtList").innerHTML=list.map(t=>{const sg=(tipo==="ahorro"&&t.retiro)?"-":info.sg;return `<div class="dtrow" data-mv="${t.id}">${catIconHTML(t.categoria,30)}<div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:14px">${esc(t.descripcion||t.categoria)}${tipo==="ahorro"&&t.retiro?` <span style="color:var(--blue);font-size:11px">· retiro</span>`:""}</div><div style="color:var(--dim);font-size:12px">${esc(t.quien||"")} · ${esc(fechaLarga(t.fecha))}</div></div><span style="color:${info.col};font-size:14px;font-weight:700;white-space:nowrap">${sg}${money(t.monto)}</span></div>`;}).join(""); }
   $("detalle").classList.remove("hidden");
   $("dtList").querySelectorAll("[data-mv]").forEach(el=>el.onclick=()=>{ $("detalle").classList.add("hidden"); openMov(el.dataset.mv); });
 };
@@ -1638,17 +1644,29 @@ function conciliar(){
   if(!movs.length){ $("cxResult").innerHTML=`<div class="empty">No se detectaron movimientos.<br>Suba el PDF/foto o pegue el texto arriba.</div>`; return; }
   const pool=tx.slice(); const usados=new Set();
   cxGlobalPick=null;
+  let verificadosAhora=0;
   cxRes=movs.map(M=>{
     let idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto)&&(!M.fecha||t.fecha===M.fecha));
     if(idx<0&&M.fecha) idx=pool.findIndex((t,i)=>!usados.has(i)&&t.tipo===M.tipo&&Math.round(+t.monto)===Math.round(M.monto));
-    if(idx>=0){ usados.add(idx); return {...M,ok:true,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg}; } return {...M,ok:false,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg};
+    if(idx>=0){
+      usados.add(idx);
+      const matched=pool[idx];
+      const yaVerificado=!!matched.verificado;
+      if(!yaVerificado){ matched.verificado=true; verificadosAhora++; }
+      return {...M,ok:true,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg,yaVerificado};
+    }
+    return {...M,ok:false,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg};
   });
-  renderCx();
+  if(verificadosAhora>0){ saveTx(); renderAll(); }
+  renderCx(verificadosAhora);
 }
-function renderCx(){
+function renderCx(verificadosAhora){
   const res=cxRes;
   const faltan=res.filter(r=>!r.ok); const faltTot=faltan.reduce((s,r)=>s+r.monto,0);
   let h=`<div style="color:var(--soft);font-size:12px;margin:14px 0 10px">${res.length} leído${res.length===1?"":"s"} · <span style="color:var(--green)">${res.length-faltan.length} ya está${res.length-faltan.length===1?"":"n"}</span> · <span style="color:${faltan.length?'var(--red)':'var(--green)'}">${faltan.length} falta${faltan.length===1?"":"n"}</span></div>`;
+  if(verificadosAhora){
+    h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--green);font-size:18px">✓</span><span style="color:var(--green);font-size:12.5px">${verificadosAhora} gasto${verificadosAhora===1?"":"s"} que coincid${verificadosAhora===1?"e":"en"} con el banco ${verificadosAhora===1?"quedó":"quedaron"} marcado${verificadosAhora===1?"":"s"} como verificado${verificadosAhora===1?"":"s"} automáticamente. No hace falta abrirlos uno por uno.</span></div>`;
+  }
   if(faltan.length){
     h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--red);font-size:18px">⚠</span><span style="color:var(--red);font-size:12.5px">${faltan.length} del banco no está${faltan.length===1?"":"n"} registrado${faltan.length===1?"":"s"} (${money(faltTot)}).</span></div>`;
     if(cxFromImg) h+=`<div style="display:flex;align-items:center;gap:9px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px"><span style="color:var(--amber);font-size:16px">✎</span><span style="color:var(--amber);font-size:12px">Estos montos vienen de una foto. Revíselos antes de agregar (puede tocarlos y corregirlos).</span></div>`;
@@ -1662,7 +1680,7 @@ function renderCx(){
       ? `<input type="text" inputmode="decimal" class="cxmontoedit" data-i="${i}" value="${r.monto}" style="width:82px;background:rgba(255,255,255,.07);border:1px solid var(--accbd);border-radius:8px;padding:2px 6px;color:${col};font-weight:700;font-size:13px;text-align:right;margin:0 2px">`
       : `<span style="color:${col};font-weight:700">${money(r.monto)}</span>`;
     const head=`<span style="font-size:13px">${r.ok?'<span style="color:var(--green)">✓</span>':'<span style="color:var(--red)">⚠</span>'} <span style="color:${col};font-weight:700">${sg}</span>${amountHTML}${r.fecha?` <span style="color:var(--dim)">· ${esc(fechaLarga(r.fecha).replace(/ \d{4}$/,""))}</span>`:""}${r.desc?` <span style="color:var(--dim)">· ${esc(r.desc.slice(0,16))}</span>`:""}</span>`;
-    if(r.ok) return `<div class="cxrow">${head}<span style="color:var(--dim);font-size:11px">ya está</span></div>`;
+    if(r.ok) return `<div class="cxrow">${head}<span style="color:${r.yaVerificado?'var(--dim)':'var(--green)'};font-size:11px">${r.yaVerificado?'ya estaba verificado':'✓ verificado ahora'}</span></div>`;
     if(r.added){ const nombre=r.pick!==null?cfg.personas[r.pick]:""; return `<div class="cxrow">${head}<span style="color:var(--green);font-size:11px">agregado a ${esc(nombre)} ✓</span></div>`; }
     const rowPick=r.pick!==null?r.pick:cxGlobalPick;
     const label=rowPick===null?"Sin asignar":esc(cfg.personas[rowPick]);
@@ -1715,7 +1733,7 @@ async function saveModal(){
   const raw=parseMonto($("fMonto").value); if(!raw||raw<=0||isNaN(raw)){ $("fMonto").focus(); return; }
   const usarUsd=(mdExtCur==="usd"&&CUR[state.pais].usd);
   const monto=usarUsd?Math.round(raw*rate()*100)/100:Math.abs(raw);
-  const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto, descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno), montoUsd:usarUsd?Math.abs(raw):null };
+  const obj={ tipo:state.tab, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:$("fCat").value, monto, descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno), retiro:(state.tab==="ahorro"&&mdRetiro), montoUsd:usarUsd?Math.abs(raw):null };
   let t;
   if(state.editId){ t=tx.find(x=>x.id===state.editId); Object.assign(t,obj); } else { obj.id="t"+Date.now()+Math.random().toString(36).slice(2,6); tx.push(obj); t=obj; }
   if(state.tab==="gasto" && mdFijo && !t.fijoId){
@@ -1746,6 +1764,7 @@ $("perHd").onclick=()=>{ const l=$("perList"); const open=l.style.display!=="non
 /* modal wiring */
 $("fab").onclick=openAdd; if($("navAddBtn"))$("navAddBtn").onclick=openAdd; $("mdCancel").onclick=closeModal; $("mdSave").onclick=saveModal; $("mdDel").onclick=delModal;
 $("fExterno").onclick=()=>{ mdExterno=!mdExterno; $("fExterno").classList.toggle("on",mdExterno); updateExtCurUI(); };
+$("fRetiro").onclick=()=>{ mdRetiro=!mdRetiro; $("fRetiro").classList.toggle("on",mdRetiro); };
 $("fExtCur").querySelectorAll("button").forEach(b=>b.onclick=()=>{ mdExtCur=b.dataset.c; updateExtCurUI(); });
 $("fMonto").addEventListener("input",()=>{ if(mdExtCur==="usd")updateExtCurUI(); });
 $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",mdVerif); };
