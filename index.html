@@ -478,11 +478,22 @@ function flagEmoji(code){
   return String.fromCodePoint(...[...cc].map(c=>127397+c.charCodeAt(0)));
 }
 const PAL=["#8b5cf6","#f472b6","#60a5fa","#fbbf24","#fb7185","#22d3ee","#f59e0b","#34d399","#c084fc","#a78bfa","#4ade80","#94a3b8"];
-const DEFG=["Supermercado","Colegio","Cable/Internet","Gasolina","Restaurantes","Barbería","Salud","Transporte","Casa","Ropa","Servicios","Otros"];
+const DEFG=["Supermercado","Colegio","Cable/Internet","Gasolina","Restaurantes","Barbería","Salud","Transporte","Casa","Ropa","Servicios","Comisiones bancarias","Otros"];
 const CATICON={Supermercado:"🛒","Cable/Internet":"📶",Colegio:"🎓",Gasolina:"⛽",Restaurantes:"🍽️",Barbería:"💈",Salud:"➕",Transporte:"🚌",Casa:"🏠",Ropa:"👕",Servicios:"🔌",Salario:"💵",Extra:"💰",Otro:"•",Otros:"•",Ahorro:"🐷",Emergencia:"🛟"};
 
 const DEFGI=["Impuesto de sociedad","Mantenimiento","Municipalidad","IVA"];
 function uid(){ return "im"+Date.now()+Math.random().toString(36).slice(2,6); }
+const DEF_MERCHANT_CATS=[
+  {k:"UBER EATS",c:"Restaurantes"},{k:"RAPPI",c:"Restaurantes"},{k:"DIDI FOOD",c:"Restaurantes"},
+  {k:"MCDONALD",c:"Restaurantes"},{k:"KFC",c:"Restaurantes"},{k:"SUBWAY",c:"Restaurantes"},{k:"EATING PLACES",c:"Restaurantes"},
+  {k:"FARMACIA",c:"Salud"},{k:"FISCHEL",c:"Salud"},{k:"DOCTORS AND PHYSICIANS",c:"Salud"},{k:"MEDISMART",c:"Salud"},
+  {k:"AUTOMERCADO",c:"Supermercado"},{k:"MASXMENOS",c:"Supermercado"},{k:"WALMART",c:"Supermercado"},{k:"PALI",c:"Supermercado"},{k:"MEGASUPER",c:"Supermercado"},{k:"PRICESMART",c:"Supermercado"},
+  {k:"ZARA",c:"Ropa"},{k:"STRADIVARIUS",c:"Ropa"},{k:"BERSHKA",c:"Ropa"},{k:"PULL&BEAR",c:"Ropa"},{k:"H&M",c:"Ropa"},{k:"FAMILY CLOTHING",c:"Ropa"},
+  {k:"NETFLIX",c:"Servicios"},{k:"SPOTIFY",c:"Servicios"},{k:"APPLE.COM",c:"Servicios"},{k:"DISNEY",c:"Servicios"},{k:"DIGITAL GOODS",c:"Servicios"},
+  {k:"UBER",c:"Transporte"},{k:"DIDI",c:"Transporte"},{k:"TAXI",c:"Transporte"},
+  {k:"GASOLINERA",c:"Gasolina"},{k:"SERVICENTRO",c:"Gasolina"},{k:"DELTA",c:"Gasolina"},
+  {k:"COMISION",c:"Comisiones bancarias"},{k:"CARGO COMISION",c:"Comisiones bancarias"}
+];
 function defaultCfg(pais){
   return { hogar:"Nuestro hogar", tc:CUR[pais].tc, tcAuto:true, tcFecha:"", meta:0, presupuesto:0, ingresoMensual:0,
     personas:["Mamá","Papá","Hijo"],
@@ -491,6 +502,7 @@ function defaultCfg(pais){
     ahorros:["Ahorro","Emergencia"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
     ahorroClaves:["AHORRO","CUENTA DE GASTOS"],
     ahorroRecordados:{},
+    merchantCats:DEF_MERCHANT_CATS.slice(),
     inmuebles:[], fijos:[] };
 }
 function normFijos(arr){
@@ -524,6 +536,8 @@ function normList(arr,fallback){
 function migrateCfg(pais,raw){
   const d=defaultCfg(pais);
   if(!raw||typeof raw!=="object") return d;
+  let gastos=normList(raw.gastos,d.gastos);
+  if(!gastos.some(c=>/comisi[oó]n/i.test(c.n))) gastos=gastos.concat([{n:"Comisiones bancarias",c:PAL[gastos.length%PAL.length]}]);
   return {
     hogar: raw.hogar || d.hogar,
     tc: (typeof raw.tc==="number"&&raw.tc>0)?raw.tc:(typeof raw.tipoCambio==="number"&&raw.tipoCambio>0?raw.tipoCambio:d.tc),
@@ -533,11 +547,12 @@ function migrateCfg(pais,raw){
     presupuesto: typeof raw.presupuesto==="number"?raw.presupuesto:0,
     ingresoMensual: typeof raw.ingresoMensual==="number"?raw.ingresoMensual:0,
     personas: (Array.isArray(raw.personas)&&raw.personas.length)?raw.personas.slice():d.personas,
-    gastos: normList(raw.gastos,d.gastos),
+    gastos: gastos,
     ingresos: normList(raw.ingresos,d.ingresos),
     ahorros: normList(raw.ahorros,d.ahorros),
     ahorroClaves: (Array.isArray(raw.ahorroClaves)?raw.ahorroClaves.map(x=>String(x||"").trim()).filter(Boolean):d.ahorroClaves),
     ahorroRecordados: (raw.ahorroRecordados&&typeof raw.ahorroRecordados==="object")?raw.ahorroRecordados:{},
+    merchantCats: (Array.isArray(raw.merchantCats))?raw.merchantCats.map(x=>({k:String((x&&x.k)||"").trim(),c:String((x&&x.c)||"").trim()})).filter(x=>x.k&&x.c):d.merchantCats,
     inmuebles: normInmuebles(raw.inmuebles),
     fijos: normFijos(raw.fijos)
   };
@@ -1410,6 +1425,16 @@ function renderSet(){
     ${recordados.length?`<div style="color:var(--dim);font-size:11px;margin:12px 0 6px">Descripciones recordadas manualmente:</div>`+recordados.map(d=>`<div class="set-row" style="align-items:center"><span style="flex:1;font-size:12px;color:var(--soft)">${esc(d)}</span><span class="x" data-delaho="${esc(d)}">✕</span></div>`).join(""):""}
   </div>`;
 
+  // comercios → categoría (solo aplica al leer capturas/estados de cuenta)
+  h+=`<div class="set-sec"><h3>Comercios → categoría</h3>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:10px">Al leer una captura o estado de cuenta, si el nombre del comercio contiene alguna de estas palabras, la app pone esa categoría por defecto (usted la puede cambiar igual antes de agregar). No afecta lo que usted escribe a mano.</div>`;
+  h+=(cfg.merchantCats||[]).map((m,i)=>`<div class="set-row" style="align-items:center">
+      <input value="${esc(m.k)}" placeholder="Ej. UBER EATS" data-mck="${i}" style="flex:1.3">
+      <select data-mcc="${i}" style="flex:1;min-width:0;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:6px">${(cfg.gastos||[]).map(c=>`<option value="${esc(c.n)}" ${c.n===m.c?"selected":""}>${esc(c.n)}</option>`).join("")}</select>
+      <span class="x" data-delmc="${i}">✕</span>
+    </div>`).join("");
+  h+=`<div class="set-add" id="addMerchantCat">+ Agregar comercio</div></div>`;
+
   // gastos fijos
   h+=`<div class="set-sec"><h3>Gastos fijos</h3>
     <div style="color:var(--dim);font-size:11px;margin-bottom:10px">Se crean solos cada mes con el mismo monto. Aparecen como pendientes arriba en el Panel hasta que los marques como pagados.</div>`;
@@ -1469,6 +1494,10 @@ function renderSet(){
   $("viewSet").querySelectorAll("[data-fm]").forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.fm; cfg.fijos[i].monto=Math.max(0,+inp.value||0); await saveCfg(); });
   $("viewSet").querySelectorAll("[data-delfijo]").forEach(b=>b.onclick=async()=>{ cfg.fijos.splice(+b.dataset.delfijo,1); await saveCfg(); renderSet(); });
   if($("addFijo"))$("addFijo").onclick=async()=>{ cfg.fijos=cfg.fijos||[]; cfg.fijos.push({id:uid(),nombre:"Nuevo gasto fijo",categoria:catDefault("gasto"),monto:0}); await saveCfg(); renderSet(); };
+  $("viewSet").querySelectorAll("[data-mck]").forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.mck; cfg.merchantCats[i].k=inp.value.trim(); await saveCfg(); });
+  $("viewSet").querySelectorAll("[data-mcc]").forEach(sel=>sel.onchange=async()=>{ const i=+sel.dataset.mcc; cfg.merchantCats[i].c=sel.value; await saveCfg(); });
+  $("viewSet").querySelectorAll("[data-delmc]").forEach(b=>b.onclick=async()=>{ cfg.merchantCats.splice(+b.dataset.delmc,1); await saveCfg(); renderSet(); });
+  if($("addMerchantCat"))$("addMerchantCat").onclick=async()=>{ cfg.merchantCats=cfg.merchantCats||[]; cfg.merchantCats.push({k:"",c:catDefault("gasto")}); await saveCfg(); renderSet(); };
   $("viewSet").querySelectorAll("[data-per]").forEach(inp=>inp.onchange=async()=>{ const i=+inp.dataset.per; const old=cfg.personas[i]; const v=inp.value.trim(); if(!v){renderSet();return;} cfg.personas[i]=v; tx.forEach(t=>{if(t.quien===old)t.quien=v;}); await saveCfg(); await saveTx(); });
   $("viewSet").querySelectorAll("[data-delper]").forEach(b=>b.onclick=async()=>{ if(cfg.personas.length<=1)return; cfg.personas.splice(+b.dataset.delper,1); await saveCfg(); renderSet(); buildSidebar(); });
   $("addPer").onclick=async()=>{ cfg.personas.push("Nueva persona"); await saveCfg(); renderSet(); buildSidebar(); };
@@ -1658,10 +1687,23 @@ async function leerArchivo(file,kind){
   }catch(e){ $("cxStatus").textContent="No se pudo leer el archivo. Use una captura clara, o pegue el texto abajo."; }
 }
 let cxRes=[]; let cxGlobalPick=null;
-function catDefault(tipo){ const list=tipo==="ingreso"?cfg.ingresos:tipo==="ahorro"?cfg.ahorros:cfg.gastos; return list&&list[0]?list[0].n:""; }
+function catPorComercio(tipo,desc){
+  if(tipo!=="gasto"||!desc) return null;
+  const d=desc.toUpperCase();
+  const reglas=(cfg.merchantCats||[]).slice().sort((a,b)=>(b.k||"").length-(a.k||"").length);
+  for(const r of reglas){ if(r.k&&d.includes(r.k.toUpperCase())){ const match=(cfg.gastos||[]).find(c=>c.n.toUpperCase()===String(r.c||"").toUpperCase()); if(match) return match.n; } }
+  return null;
+}
+function catDefault(tipo,desc){ const hint=catPorComercio(tipo,desc); if(hint) return hint; const list=tipo==="ingreso"?cfg.ingresos:tipo==="ahorro"?cfg.ahorros:cfg.gastos; return list&&list[0]?list[0].n:""; }
 async function agregarFaltante(r,quien){
-  const obj={ id:"t"+Date.now()+Math.random().toString(36).slice(2,6), tipo:r.tipo, fecha:r.fecha||today(), quien:quien||"", categoria:r.cat||catDefault(r.tipo), monto:Math.abs(r.monto), descripcion:(r.desc||"").trim(), verificado:true, retiro:!!r.retiro };
-  tx.push(obj); await saveTx(); renderAll();
+  const obj={ id:"t"+Date.now()+Math.random().toString(36).slice(2,6), tipo:r.tipo, fecha:r.fecha||today(), quien:quien||"", categoria:r.cat||catDefault(r.tipo,r.desc), monto:Math.abs(r.monto), descripcion:(r.desc||"").trim(), verificado:true, retiro:!!r.retiro };
+  tx.push(obj); await saveTx();
+  if(obj.tipo==="gasto"&&obj.descripcion&&!catPorComercio("gasto",obj.descripcion)){
+    const k=obj.descripcion.slice(0,40);
+    cfg.merchantCats=cfg.merchantCats||[];
+    if(!cfg.merchantCats.some(m=>m.k&&m.k.toUpperCase()===k.toUpperCase())){ cfg.merchantCats.push({k,c:obj.categoria}); await saveCfg(); }
+  }
+  renderAll();
 }
 function conciliar(){
   const movs=parseText($("cxText").value);
@@ -1677,9 +1719,9 @@ function conciliar(){
       const matched=pool[idx];
       const yaVerificado=!!matched.verificado;
       if(!yaVerificado){ matched.verificado=true; verificadosAhora++; }
-      return {...M,ok:true,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg,yaVerificado};
+      return {...M,ok:true,added:false,pick:null,cat:catDefault(M.tipo,M.desc),editing:false,editingCat:false,fromImg:cxFromImg,yaVerificado};
     }
-    return {...M,ok:false,added:false,pick:null,cat:catDefault(M.tipo),editing:false,editingCat:false,fromImg:cxFromImg};
+    return {...M,ok:false,added:false,pick:null,cat:catDefault(M.tipo,M.desc),editing:false,editingCat:false,fromImg:cxFromImg};
   });
   if(verificadosAhora>0){ saveTx(); renderAll(); }
   renderCx(verificadosAhora);
@@ -1711,7 +1753,7 @@ function renderCx(verificadosAhora){
     const catList=(r.tipo==="ingreso"?cfg.ingresos:r.tipo==="ahorro"?cfg.ahorros:cfg.gastos).map(c=>c.n);
     let row=`<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06)"><div class="cxrow" style="border:none;padding:0 0 7px">${head}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:11.5px;color:${rowPick===null?'var(--amber)':'var(--soft)'}">${label}</span><button class="cxchg" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
-      <span style="color:var(--dim)">·</span><span style="font-size:11.5px;color:var(--soft)">${esc(r.cat||catDefault(r.tipo))}</span><button class="cxchgcat" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
+      <span style="color:var(--dim)">·</span><span style="font-size:11.5px;color:var(--soft)">${esc(r.cat||catDefault(r.tipo,r.desc))}</span><button class="cxchgcat" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
       <button class="cxadd" data-i="${i}" style="margin-left:auto;font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;background:${rowPick===null?'rgba(255,255,255,.06)':'var(--accent)'};color:${rowPick===null?'var(--dim)':'var(--acc-ink)'}">Agregar</button></div>
       ${r.tipo!=="ahorro"&&r.desc?`<button class="cxaho" data-i="${i}" style="margin-top:6px;font-size:11px;color:var(--blue);font-weight:600;background:none;border:none;padding:0">🏦 Es un movimiento entre mis cuentas</button>`:""}`;
     if(r.editing) row+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${cfg.personas.map((p,pi)=>`<button class="cxrpick" data-i="${i}" data-pi="${pi}" style="font-size:11px;padding:4px 9px;border-radius:999px;font-weight:600;background:${pi===rowPick?'var(--accbg)':'rgba(255,255,255,.05)'};color:${pi===rowPick?'var(--ink)':'var(--dim)'};border:1px solid ${pi===rowPick?'var(--accbd)':'transparent'}">${esc(p)}</button>`).join("")}</div>`;
