@@ -1659,13 +1659,33 @@ function parseText(text){
 }
 function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=()=>rej(new Error("load")); document.head.appendChild(s); }); }
 let _pdf=null;
-async function readPDF(file){
+async function readPDF(file,onProgress){
   if(!_pdf){ _pdf=loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js").then(()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }); }
   await _pdf; const buf=await file.arrayBuffer();
   const pdf=await window.pdfjsLib.getDocument({data:buf}).promise; let text="";
-  for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const c=await page.getTextContent(); let lastY=null,line="";
-    for(const it of c.items){ const y=it.transform[5]; if(lastY!==null&&Math.abs(y-lastY)>3){ text+=line+"\n"; line=""; } line+=it.str+" "; lastY=y; } text+=line+"\n"; }
-  return text;
+  let tessWorker=null;
+  for(let p=1;p<=pdf.numPages;p++){
+    if(onProgress) onProgress(`Leyendo página ${p} de ${pdf.numPages}…`);
+    const page=await pdf.getPage(p); const c=await page.getTextContent(); let lastY=null,line=""; let pageText="";
+    for(const it of c.items){ const y=it.transform[5]; if(lastY!==null&&Math.abs(y-lastY)>3){ pageText+=line+"\n"; line=""; } line+=it.str+" "; lastY=y; } pageText+=line+"\n";
+    if(pageText.trim().length<8){
+      if(!tessWorker){
+        if(onProgress) onProgress(`Página ${p} es una imagen — activando reconocimiento…`);
+        if(!_tess){ _tess=loadScript("https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"); }
+        await _tess; tessWorker=await window.Tesseract.createWorker("eng");
+      }
+      if(onProgress) onProgress(`Leyendo página ${p} de ${pdf.numPages} (imagen)…`);
+      const viewport=page.getViewport({scale:2.2});
+      const canvas=document.createElement("canvas"); canvas.width=viewport.width; canvas.height=viewport.height;
+      await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
+      const blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
+      const {data}=await tessWorker.recognize(blob);
+      pageText=data.text||"";
+    }
+    text+=pageText+"\n";
+  }
+  if(tessWorker) await tessWorker.terminate();
+  return {text, ocrUsed:!!tessWorker};
 }
 let _tess=null;
 async function readFoto(file){
@@ -1681,9 +1701,14 @@ async function leerArchivo(file,kind){
   $("cxStatus").textContent = kind==="pdf" ? "Leyendo el PDF…" : "Leyendo la imagen… (la primera vez tarda unos segundos)";
   $("cxResult").innerHTML="";
   try{
-    const text = kind==="pdf" ? await readPDF(file) : await readFoto(file);
-    cxFromImg = kind==="img";
-    $("cxText").value=(text||"").trim(); $("cxStatus").textContent=""; conciliar();
+    if(kind==="pdf"){
+      const {text,ocrUsed}=await readPDF(file,msg=>{ if($("cxStatus")) $("cxStatus").textContent=msg; });
+      cxFromImg=ocrUsed; $("cxText").value=(text||"").trim();
+    } else {
+      const text=await readFoto(file);
+      cxFromImg=true; $("cxText").value=(text||"").trim();
+    }
+    $("cxStatus").textContent=""; conciliar();
   }catch(e){ $("cxStatus").textContent="No se pudo leer el archivo. Use una captura clara, o pegue el texto abajo."; }
 }
 let cxRes=[]; let cxGlobalPick=null;
