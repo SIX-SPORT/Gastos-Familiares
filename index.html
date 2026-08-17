@@ -551,7 +551,7 @@ function normInmueble(x){
     return { frecuencia:r.frecuencia, modo:r.modo==="fijo"?"fijo":"pct", valor:Math.max(0,+r.valor||0), mesInicio:typeof r.mesInicio==="string"?r.mesInicio:today().slice(0,7) };
   });
   const hRaw=x.hipoteca&&typeof x.hipoteca==="object"?x.hipoteca:{};
-  const hipoteca={ activa:!!hRaw.activa, saldoInicial:Math.max(0,+hRaw.saldoInicial||0), tasaAnual:Math.max(0,+hRaw.tasaAnual||0), cuota:Math.max(0,+hRaw.cuota||0), fechaInicio:typeof hRaw.fechaInicio==="string"?hRaw.fechaInicio:today().slice(0,7) };
+  const hipoteca={ activa:!!hRaw.activa, saldoInicial:Math.max(0,+hRaw.saldoInicial||0), tasaAnual:Math.max(0,+hRaw.tasaAnual||0), cuota:Math.max(0,+hRaw.cuota||0), fechaInicio:typeof hRaw.fechaInicio==="string"?hRaw.fechaInicio:today().slice(0,7), moneda:normMoneda(hRaw.moneda), tc:Math.max(0,+hRaw.tc||0) };
   return { id:x.id||uid(), nombre:(x.nombre||"Inmueble").toString(), catGastos, meses, recurrentes, hipoteca };
 }
 function normInmuebles(arr){ return Array.isArray(arr)?arr.map(normInmueble):[]; }
@@ -1257,13 +1257,14 @@ function mesData(inm,key){
 }
 function montoLocal(x){ return x.moneda==="usd" ? x.monto*(x.tc||cfg.tc||1) : x.monto; }
 function montoLocalGen(x,tc){ return x.moneda==="usd" ? x.monto*(x.tc||tc||1) : x.monto; }
-function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,g)=>a+montoLocal(g),0); const alq=montoLocal(m.alquiler); const hip=hipotecaEstado(inm,key); const hipCuota=hip?hip.cuota:0; return { alquiler:alq, gastos:gTot+hipCuota, gastosSinHip:gTot, neto:alq-gTot-hipCuota, hip }; }
+function montoLocalHip(hip,tc){ return hip&&hip.moneda==="usd" ? (hip.tc||tc||1) : 1; }
+function inmTotales(inm,key){ const m=mesData(inm,key); const gTot=m.gastos.reduce((a,g)=>a+montoLocal(g),0); const alq=montoLocal(m.alquiler); const hip=hipotecaEstado(inm,key); const hipCuota=hip?hip.cuota*montoLocalHip(inm.hipoteca,cfg.tc):0; return { alquiler:alq, gastos:gTot+hipCuota, gastosSinHip:gTot, neto:alq-gTot-hipCuota, hip }; }
 /* total de un país (hogar + inmuebles) para un mes dado, en la moneda propia de ese país */
 function totalPaisMes(k,mesKey){
   const d=paisData[k]||{tx:[],cfg:defaultCfg(k)};
   const hogar=sum((d.tx||[]).filter(t=>t.tipo==="gasto"&&!t.externo&&t.fecha&&t.fecha.slice(0,7)===mesKey));
   let inm=0;
-  (d.cfg.inmuebles||[]).forEach(x=>{ const m=mesData(x,mesKey); inm+=m.gastos.reduce((a,g)=>a+montoLocalGen(g,d.cfg.tc),0); const hip=hipotecaEstado(x,mesKey); if(hip) inm+=hip.cuota; });
+  (d.cfg.inmuebles||[]).forEach(x=>{ const m=mesData(x,mesKey); inm+=m.gastos.reduce((a,g)=>a+montoLocalGen(g,d.cfg.tc),0); const hip=hipotecaEstado(x,mesKey); if(hip) inm+=hip.cuota*montoLocalHip(x.hipoteca,d.cfg.tc); });
   return { hogar, inm, total:hogar+inm };
 }
 
@@ -1309,7 +1310,8 @@ function inmCardHtml(inm,key){
   const gTot=m.gastos.reduce((a,g)=>a+montoLocal(g),0);
   const alqLocal=montoLocal(m.alquiler);
   const hipEst=hipotecaEstado(inm,key);
-  const hipCuota=hipEst?hipEst.cuota:0;
+  const hipFactor=montoLocalHip(inm.hipoteca,cfg.tc);
+  const hipCuota=hipEst?hipEst.cuota*hipFactor:0;
   const neto=alqLocal-gTot-hipCuota;
   const open=state.inmOpen===inm.id;
   const usdPais=CUR[state.pais].usd;
@@ -1394,6 +1396,7 @@ function inmCardHtml(inm,key){
       h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">`;
       h+=`<div class="chk ${hip.activa?'on':''}" data-inmhipchk="${inm.id}" style="margin-bottom:${hip.activa?'10px':'0'}"><span class="bx">✓</span><span>🏦 Este inmueble tiene hipoteca</span></div>`;
       if(hip.activa){
+        if(usdPais) h+=`<div style="margin-bottom:8px">${monedaSeg("inmhipmon",inm.id,null,hip.moneda)}</div>`;
         h+=`<label style="color:var(--muted);font-size:11px;display:block;margin-bottom:4px">Saldo pendiente al iniciar</label>
           <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmhipsaldo="${inm.id}" value="${hip.saldoInicial||""}" placeholder="0" style="margin-bottom:10px">
           <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -1408,14 +1411,16 @@ function inmCardHtml(inm,key){
               ${MESL.map((mn,i)=>`<option value="${i+1}" ${(+hip.fechaInicio.split("-")[1])===i+1?"selected":""}>${mn}</option>`).join("")}
             </select>
             <input class="field num" type="number" inputmode="numeric" data-inmhipanio="${inm.id}" value="${hip.fechaInicio.split("-")[0]}" style="flex:1" placeholder="2026">
-          </div>`;
+          </div>
+          ${usdPais&&hip.moneda==="usd"?`<div style="color:var(--dim);font-size:11px;margin-top:6px">Tipo de cambio ${CUR[state.pais].sym}${hip.tc||cfg.tc||1} usado para convertir a ${esc(CUR[state.pais].name)}</div>`:""}`;
         if(hipEst){
           h+=`<div style="border-top:1px solid rgba(255,255,255,.06);margin-top:12px;padding-top:11px">
-            <div style="color:var(--dim);font-size:11px;margin-bottom:7px">${esc(imLabel())}</div>
-            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--soft)">Cuota</span><span style="color:var(--ink);font-weight:700">${money(hipEst.cuota)}</span></div>
-            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--soft)">— Interés</span><span style="color:var(--red)">${money(hipEst.interes)}</span></div>
-            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--soft)">— Abono a capital</span><span style="color:var(--green)">${money(hipEst.abono)}</span></div>
-            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0 0;margin-top:4px;border-top:1px solid rgba(255,255,255,.05)"><span style="color:var(--muted)">Saldo pendiente después</span><span style="color:var(--ink);font-weight:700">${money(hipEst.saldoDespues)}</span></div>
+            <div style="color:var(--dim);font-size:11px;margin-bottom:7px">${esc(imLabel())}${usdPais&&hip.moneda==="usd"?" (en $)":""}</div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--soft)">Cuota</span><span style="color:var(--ink);font-weight:700">${usdPais&&hip.moneda==="usd"?"$"+hipEst.cuota.toFixed(2):money(hipEst.cuota)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--soft)">— Interés</span><span style="color:var(--red)">${usdPais&&hip.moneda==="usd"?"$"+hipEst.interes.toFixed(2):money(hipEst.interes)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--soft)">— Abono a capital</span><span style="color:var(--green)">${usdPais&&hip.moneda==="usd"?"$"+hipEst.abono.toFixed(2):money(hipEst.abono)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0 0;margin-top:4px;border-top:1px solid rgba(255,255,255,.05)"><span style="color:var(--muted)">Saldo pendiente después</span><span style="color:var(--ink);font-weight:700">${usdPais&&hip.moneda==="usd"?"$"+hipEst.saldoDespues.toFixed(2):money(hipEst.saldoDespues)}</span></div>
+            ${usdPais&&hip.moneda==="usd"?`<div style="display:flex;justify-content:space-between;font-size:11px;padding:6px 0 0;color:var(--dim)"><span>≈ en ${esc(CUR[state.pais].sym)}</span><span>${money(hipCuota)}</span></div>`:""}
           </div>`;
         } else {
           h+=`<div style="color:var(--dim);font-size:11px;margin-top:10px">Este mes es anterior al mes de inicio, o falta completar los datos de arriba.</div>`;
@@ -1443,7 +1448,7 @@ function wireInm(key){
   if($("imReset"))$("imReset").onclick=()=>{ const d=new Date(); state.inmMes=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); renderInm(); };
 
   if($("addInm"))$("addInm").onclick=async()=>{
-    const inm={ id:uid(), nombre:"Nuevo inmueble", catGastos:DEFGI.slice(), meses:{}, recurrentes:DEFGI.map(()=>null), hipoteca:{activa:false,saldoInicial:0,tasaAnual:0,cuota:0,fechaInicio:today().slice(0,7)} };
+    const inm={ id:uid(), nombre:"Nuevo inmueble", catGastos:DEFGI.slice(), meses:{}, recurrentes:DEFGI.map(()=>null), hipoteca:{activa:false,saldoInicial:0,tasaAnual:0,cuota:0,fechaInicio:today().slice(0,7),moneda:"local",tc:0} };
     cfg.inmuebles.push(inm); state.inmOpen=inm.id; await saveCfg(); renderInm();
   };
 
@@ -1550,10 +1555,16 @@ function wireInm(key){
 
   v.querySelectorAll("[data-inmhipchk]").forEach(el=>el.onclick=async()=>{
     const inm=cfg.inmuebles.find(x=>x.id===el.dataset.inmhipchk); if(!inm)return;
-    if(!inm.hipoteca) inm.hipoteca={activa:false,saldoInicial:0,tasaAnual:0,cuota:0,fechaInicio:today().slice(0,7)};
+    if(!inm.hipoteca) inm.hipoteca={activa:false,saldoInicial:0,tasaAnual:0,cuota:0,fechaInicio:today().slice(0,7),moneda:"local",tc:0};
     inm.hipoteca.activa=!inm.hipoteca.activa;
     await saveCfg(); renderInm();
   });
+  v.querySelectorAll("[data-inmhipmon]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===seg.dataset.inmhipmon); if(!inm)return;
+    inm.hipoteca.moneda=normMoneda(b.dataset.c);
+    if(inm.hipoteca.moneda==="usd") inm.hipoteca.tc=cfg.tc||inm.hipoteca.tc||1;
+    await saveCfg(); renderInm();
+  }));
   v.querySelectorAll("[data-inmhipsaldo]").forEach(inp=>inp.onchange=async()=>{
     const inm=cfg.inmuebles.find(x=>x.id===inp.dataset.inmhipsaldo); if(!inm)return;
     inm.hipoteca.saldoInicial=Math.max(0,+inp.value||0); await saveCfg(); renderInm();
