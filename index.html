@@ -580,6 +580,7 @@ let state={ pais:"CR", view:"Panel", tab:"gasto", period:"mes", movPeriod:"dia",
 state.diaRef=(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-"+String(new Date().getDate()).padStart(2,"0"));
 let perOpen=false;
 let tx=[], cfg=defaultCfg("CR");
+let inmCalcState={};
 
 /* ---------- firebase ---------- */
 let fbApp,auth,db,txRef,cfgRef,unsubTx=null,unsubCfg=null,firstCfg=true;
@@ -1285,7 +1286,24 @@ function inmCardHtml(inm,key){
       h+=`<div style="color:var(--dim);font-size:11px;margin-top:6px">≈ ${money(alqLocal)} · tipo de cambio ${CUR[state.pais].sym}${tcUsado} usado ese mes</div>`;
     }
     h+=`</div>`;
-    h+=`<button data-inm13="${inm.id}" style="width:100%;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.35);color:var(--blue);font-weight:700;border-radius:11px;padding:10px;font-size:12.5px;margin-bottom:16px">🧮 Calcular 13% de impuesto sobre el alquiler</button>`;
+    {
+      const st=inmCalcState[inm.id]||(inmCalcState[inm.id]={modo:"pct",valor:13,cat:0});
+      if(st.cat>=inm.catGastos.length) st.cat=0;
+      h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">
+        <div style="color:var(--muted);font-size:11px;margin-bottom:8px">Calculadora rápida de gasto</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button data-inmmodo="${inm.id}" data-modo="pct" class="pkquick" style="${st.modo==='pct'?'background:rgba(96,165,250,.18);color:var(--blue)':''}">% del alquiler</button>
+          <button data-inmmodo="${inm.id}" data-modo="fijo" class="pkquick" style="${st.modo==='fijo'?'background:rgba(96,165,250,.18);color:var(--blue)':''}">Monto fijo</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:9px">
+          <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmcalcval="${inm.id}" value="${st.valor}" placeholder="${st.modo==='pct'?'13':'0'}" style="flex:1">
+          <select data-inmcalccat="${inm.id}" style="flex:1.5;min-width:0;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:0 6px">
+            ${inm.catGastos.map((c,i)=>`<option value="${i}" ${i===st.cat?"selected":""}>${esc(c)}</option>`).join("")}
+          </select>
+        </div>
+        <button data-inmcalcgo="${inm.id}" style="width:100%;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.4);color:var(--blue);font-weight:700;border-radius:10px;padding:9px;font-size:12.5px">Poner en gasto</button>
+      </div>`;
+    }
 
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos</div>`;
     h+=inm.catGastos.map((cat,i)=>{
@@ -1389,17 +1407,31 @@ function wireInm(key){
     inm.catGastos.push("Nuevo gasto"); await saveCfg(); renderInm();
   });
 
-  v.querySelectorAll("[data-inm13]").forEach(b=>b.onclick=async()=>{
-    const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inm13); if(!inm)return;
+  v.querySelectorAll("[data-inmmodo]").forEach(b=>b.onclick=()=>{
+    const st=inmCalcState[b.dataset.inmmodo]||(inmCalcState[b.dataset.inmmodo]={modo:"pct",valor:13,cat:0});
+    st.modo=b.dataset.modo; if(st.modo==="fijo"&&st.valor===13) st.valor=0; renderInm();
+  });
+  v.querySelectorAll("[data-inmcalcval]").forEach(inp=>inp.onchange=()=>{
+    const st=inmCalcState[inp.dataset.inmcalcval]||(inmCalcState[inp.dataset.inmcalcval]={modo:"pct",valor:13,cat:0});
+    st.valor=Math.max(0,+inp.value||0);
+  });
+  v.querySelectorAll("[data-inmcalccat]").forEach(sel=>sel.onchange=()=>{
+    const st=inmCalcState[sel.dataset.inmcalccat]||(inmCalcState[sel.dataset.inmcalccat]={modo:"pct",valor:13,cat:0});
+    st.cat=+sel.value;
+  });
+  v.querySelectorAll("[data-inmcalcgo]").forEach(b=>b.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmcalcgo); if(!inm)return;
+    const st=inmCalcState[inm.id]||{modo:"pct",valor:13,cat:0};
     const key=state.inmMes; const m=mesData(inm,key);
-    const alqLocal=montoLocal(m.alquiler);
-    if(!alqLocal){ alert("Primero ponga el monto del alquiler de este mes."); return; }
-    const monto13=Math.round(alqLocal*0.13*100)/100;
-    let idx=inm.catGastos.findIndex(c=>/iva|impuesto/i.test(c));
-    if(idx<0){ inm.catGastos.push("IVA (13%)"); idx=inm.catGastos.length-1; }
-    const m2=mesData(inm,key);
-    m2.gastos[idx]={monto:monto13,moneda:"local",tc:0};
-    await saveCfg(); renderInm(); showToast(`Impuesto puesto: ${money(monto13)}`);
+    let monto;
+    if(st.modo==="pct"){
+      const alqLocal=montoLocal(m.alquiler);
+      if(!alqLocal){ alert("Primero ponga el monto del alquiler de este mes."); return; }
+      monto=Math.round(alqLocal*(st.valor/100)*100)/100;
+    } else { monto=Math.round((st.valor||0)*100)/100; }
+    if(!monto){ alert("Ponga un valor mayor a 0."); return; }
+    m.gastos[st.cat]={monto,moneda:"local",tc:0};
+    await saveCfg(); renderInm(); showToast(`${esc(inm.catGastos[st.cat])}: ${money(monto)}`);
   });
 
   v.querySelectorAll("[data-inmsave]").forEach(b=>b.onclick=async()=>{
