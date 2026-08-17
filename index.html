@@ -416,7 +416,18 @@
   </div>
 </div>
 
-<!-- VERIFICAR ESTADO DE CUENTA -->
+<!-- REVISAR DUPLICADOS -->
+<div id="dupModal" class="modal hidden">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <h3 style="margin:0">Revisar duplicados</h3>
+      <span id="dupClose" style="color:var(--muted);font-size:22px;cursor:pointer;line-height:1">✕</span>
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:10px">Busca transferencias a Ahorro que quedaron anotadas <b>dos veces</b>: una vez bien (como Ahorro) y otra vez de más (como Gasto, del mismo día y mismo monto). Esto suele pasar cuando se concilia el mismo estado de cuenta más de una vez.</div>
+    <div id="dupResult"></div>
+    <button class="cancel" id="dupCancel">Cerrar</button>
+  </div>
+</div>
 <div id="concil" class="modal hidden">
   <div class="sheet">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
@@ -985,7 +996,7 @@ function renderMov(){
   }
   h+=`<div class="periods" id="mvPer">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.movPeriod===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+`</div>`;
   h+=perBlock("mm");
-  h+=`<button class="cxbtn" id="mvVerif">✓ Verificar con el estado de cuenta</button>`;
+  h+=`<div style="display:flex;gap:8px"><button class="cxbtn" id="mvVerif" style="flex:1">✓ Verificar con el estado de cuenta</button><button class="cxbtn" id="mvDup" style="flex:0 0 auto;padding-left:14px;padding-right:14px">🔍 Duplicados</button></div>`;
   if(!set.length){ h+=`<div class="empty" style="padding:40px 10px">🧾<br>No hay movimientos en ${esc(movLabel.toLowerCase())}.<br>Toque <b>+</b> para agregar.</div>`; }
   else{ let last="";
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
@@ -999,6 +1010,7 @@ function renderMov(){
   $("viewMov").innerHTML=h;
   $("mvPer").querySelectorAll("button").forEach(b=>b.onclick=()=>{state.movPeriod=b.dataset.p; if(b.dataset.p==="dia")state.diaRef=today(); renderMov();buildSidebar();});
   if($("mvVerif"))$("mvVerif").onclick=()=>openConcil();
+  if($("mvDup"))$("mvDup").onclick=()=>openDup();
   if($("mvCal"))$("mvCal").onclick=()=>openPicker("mov");
   if($("mvPrevD"))$("mvPrevD").onclick=()=>{ const d=new Date(state.diaRef+"T00:00:00"); d.setDate(d.getDate()-1); state.diaRef=ymd(d); state.mesRef=state.diaRef.slice(0,7); renderMov(); buildSidebar(); };
   if($("mvNextD"))$("mvNextD").onclick=()=>{ const d=new Date(state.diaRef+"T00:00:00"); d.setDate(d.getDate()+1); state.diaRef=ymd(d); state.mesRef=state.diaRef.slice(0,7); renderMov(); buildSidebar(); };
@@ -1695,6 +1707,33 @@ async function readFoto(file){
 }
 window.openConcil=()=>{ $("cxText").value=""; $("cxResult").innerHTML=""; $("cxStatus").textContent=""; cxFromImg=false; $("concil").classList.remove("hidden"); };
 function closeConcil(){ $("concil").classList.add("hidden"); }
+function buscarDuplicadosAhorro(){
+  const pares=[];
+  const ahorros=tx.filter(t=>t.tipo==="ahorro"&&!t.retiro);
+  for(const a of ahorros){
+    const amt=Math.round(+a.monto);
+    const g=tx.find(t=>t.tipo==="gasto"&&!t.externo&&t.fecha===a.fecha&&Math.round(+t.monto)===amt);
+    if(g) pares.push({ahorro:a,gasto:g});
+  }
+  return pares;
+}
+function openDup(){ renderDup(); $("dupModal").classList.remove("hidden"); }
+function closeDup(){ $("dupModal").classList.add("hidden"); }
+function renderDup(){
+  const pares=buscarDuplicadosAhorro();
+  if(!pares.length){ $("dupResult").innerHTML=`<div style="color:var(--green);font-size:13px;padding:14px 0">✓ No se encontró ningún duplicado de este tipo. Si el Disponible sigue sin cuadrar, puede que sea por otra razón.</div>`; return; }
+  $("dupResult").innerHTML=`<div style="color:var(--amber);font-size:12px;margin:8px 0">Se encontraron ${pares.length} posible${pares.length===1?"":"s"} duplicado${pares.length===1?"":"s"}:</div>`+
+    pares.map((p,i)=>`<div style="border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:11px;margin-bottom:9px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">${esc(fechaLarga(p.ahorro.fecha))}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12.5px;color:var(--blue)">✓ Ahorro — ${esc(p.ahorro.descripcion||p.ahorro.categoria)}</span><span style="color:var(--blue);font-weight:700">${money(p.ahorro.monto)}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12.5px;color:var(--red)">⚠ Gasto (de más) — ${esc(p.gasto.descripcion||p.gasto.categoria)}</span><span style="color:var(--red);font-weight:700">${money(p.gasto.monto)}</span></div>
+      <button class="dupDel" data-i="${i}" style="margin-top:8px;width:100%;font-size:12.5px;font-weight:700;padding:9px;border-radius:10px;background:var(--red);color:#fff">Borrar el Gasto duplicado</button>
+    </div>`).join("");
+  $("dupResult").querySelectorAll(".dupDel").forEach(b=>b.onclick=async()=>{
+    const p=pares[+b.dataset.i]; b.disabled=true; b.textContent="Borrando…";
+    tx=tx.filter(t=>t.id!==p.gasto.id); await saveTx(); renderAll(); renderDup();
+  });
+}
 let cxFromImg=false;
 async function leerArchivo(file,kind){
   if(!file) return;
@@ -1879,6 +1918,7 @@ $("pkTotal").onclick=()=>{ pkApply("total"); };
 $("pkDate").onchange=()=>{ const v=$("pkDate").value; if(v){ state.diaRef=v; state.mesRef=v.slice(0,7); pkApply("dia"); } };
 $("picker").onclick=e=>{ if(e.target.id==="picker")closePicker(); };
 $("cxClose").onclick=closeConcil; $("cxCancel").onclick=closeConcil;
+$("dupClose").onclick=closeDup; $("dupCancel").onclick=closeDup;
 $("concil").onclick=e=>{ if(e.target.id==="concil")closeConcil(); };
 $("cxCompare").onclick=conciliar;
 $("cxPdfBtn").onclick=()=>$("cxPdf").click();
