@@ -543,7 +543,14 @@ function normInmueble(x){
   if(x.meses&&typeof x.meses==="object"){
     Object.keys(x.meses).forEach(k=>{ meses[k]=normInmMes(x.meses[k],catGastos.length); });
   }
-  return { id:x.id||uid(), nombre:(x.nombre||"Inmueble").toString(), catGastos, meses };
+  const recRaw=Array.isArray(x.recurrentes)?x.recurrentes:[];
+  const recurrentes=catGastos.map((_,i)=>{
+    const r=recRaw[i];
+    if(!r||typeof r!=="object") return null;
+    if(!["mensual","trimestral","semestral","anual"].includes(r.frecuencia)) return null;
+    return { frecuencia:r.frecuencia, modo:r.modo==="fijo"?"fijo":"pct", valor:Math.max(0,+r.valor||0), mesInicio:typeof r.mesInicio==="string"?r.mesInicio:today().slice(0,7) };
+  });
+  return { id:x.id||uid(), nombre:(x.nombre||"Inmueble").toString(), catGastos, meses, recurrentes };
 }
 function normInmuebles(arr){ return Array.isArray(arr)?arr.map(normInmueble):[]; }
 function normList(arr,fallback){
@@ -1198,6 +1205,28 @@ function imLabel(){ return MESL[imM()]+" "+imY(); }
 function imIsCurrent(){ const d=new Date(); return state.inmMes===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")); }
 function imShift(delta){ const dt=new Date(imY(),imM()+delta,1); state.inmMes=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0"); }
 
+const FREQ_MESES={mensual:1,trimestral:3,semestral:6,anual:12};
+function mesesEntre(k1,k2){ const [y1,m1]=k1.split("-").map(Number); const [y2,m2]=k2.split("-").map(Number); return (y2-y1)*12+(m2-m1); }
+const inmRecurAplicados=new Set();
+function aplicarRecurrentes(inm,key){
+  const tag=inm.id+":"+key; if(inmRecurAplicados.has(tag)) return false;
+  inmRecurAplicados.add(tag);
+  if(!Array.isArray(inm.recurrentes)||!inm.recurrentes.length) return false;
+  const m=mesData(inm,key); let cambiado=false;
+  inm.recurrentes.forEach((r,i)=>{
+    if(!r) return;
+    const intervalo=FREQ_MESES[r.frecuencia]||1;
+    const diff=mesesEntre(r.mesInicio,key);
+    if(diff<0||diff%intervalo!==0) return;
+    if(m.gastos[i]&&m.gastos[i].monto>0) return; // no pisa lo que ya está puesto a mano
+    let monto;
+    if(r.modo==="pct"){ const alqLocal=montoLocal(m.alquiler); if(!alqLocal) return; monto=Math.round(alqLocal*(r.valor/100)*100)/100; }
+    else monto=Math.round((r.valor||0)*100)/100;
+    if(!monto) return;
+    m.gastos[i]={monto,moneda:"local",tc:0}; cambiado=true;
+  });
+  return cambiado;
+}
 function mesData(inm,key){
   const raw=inm.meses?inm.meses[key]:null;
   const r=raw||{};
@@ -1222,6 +1251,9 @@ function totalPaisMes(k,mesKey){
 
 function renderInm(){
   const key=state.inmMes;
+  let huboRecur=false;
+  cfg.inmuebles.forEach(inm=>{ if(aplicarRecurrentes(inm,key)) huboRecur=true; });
+  if(huboRecur) saveCfg();
   let h=`<div class="mtop"><div><h2>Inmuebles</h2><div class="sub">${esc(CUR[state.pais].name)}</div></div></div>`;
   h+=`<div class="mnav-row"><button id="imPrev" aria-label="Mes anterior">‹</button><button id="imCur">${calIconHTML()} ${esc(imLabel())}${imIsCurrent()?"":" ·"}</button><button id="imNext" aria-label="Mes siguiente">›</button>${imIsCurrent()?"":'<button id="imReset">Hoy</button>'}</div>`;
 
@@ -1287,8 +1319,9 @@ function inmCardHtml(inm,key){
     }
     h+=`</div>`;
     {
-      const st=inmCalcState[inm.id]||(inmCalcState[inm.id]={modo:"pct",valor:13,cat:0});
+      const st=inmCalcState[inm.id]||(inmCalcState[inm.id]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
       if(st.cat>=inm.catGastos.length) st.cat=0;
+      const FREQL={mensual:"Mensual",trimestral:"Trimestral",semestral:"Semestral",anual:"Anual"};
       h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">
         <div style="color:var(--muted);font-size:11px;margin-bottom:8px">Calculadora rápida de gasto</div>
         <div style="display:flex;gap:6px;margin-bottom:8px">
@@ -1301,20 +1334,27 @@ function inmCardHtml(inm,key){
             ${inm.catGastos.map((c,i)=>`<option value="${i}" ${i===st.cat?"selected":""}>${esc(c)}</option>`).join("")}
           </select>
         </div>
-        <button data-inmcalcgo="${inm.id}" style="width:100%;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.4);color:var(--blue);font-weight:700;border-radius:10px;padding:9px;font-size:12.5px">Poner en gasto</button>
+        <div class="chk ${st.rec?'on':''}" data-inmrecchk="${inm.id}" style="margin-bottom:${st.rec?'8px':'10px'}"><span class="bx">✓</span><span>🔁 Repetir automáticamente</span></div>
+        ${st.rec?`<select data-inmrecfreq="${inm.id}" style="width:100%;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:8px;margin-bottom:9px">
+          ${Object.keys(FREQL).map(f=>`<option value="${f}" ${f===st.freq?"selected":""}>${FREQL[f]}</option>`).join("")}
+        </select>`:""}
+        <button data-inmcalcgo="${inm.id}" style="width:100%;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.4);color:var(--blue);font-weight:700;border-radius:10px;padding:9px;font-size:12.5px">Poner en gasto${st.rec?" y repetir":""}</button>
       </div>`;
     }
 
     h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos</div>`;
+    const FREQL2={mensual:"Mensual",trimestral:"Trimestral",semestral:"Semestral",anual:"Anual"};
     h+=inm.catGastos.map((cat,i)=>{
       const g=m.gastos[i];
       const gLocal=montoLocal(g);
+      const rec=(inm.recurrentes||[])[i];
       let row=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:9px 10px;margin-bottom:8px">`;
       row+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span class="cdot" style="width:11px;height:11px;border-radius:50%;background:${PAL[i%PAL.length]};flex:none;display:inline-block"></span>
         <input data-inmcat="${inm.id}" data-i="${i}" value="${esc(cat)}" style="flex:1;min-width:0;background:transparent;border:none;color:var(--ink);font-size:13.5px;font-weight:600">
         <span class="x" data-inmdelcat="${inm.id}" data-i="${i}" style="color:var(--red);font-size:13px;padding:2px 4px;cursor:pointer;font-weight:700">✕</span>
       </div>`;
+      if(rec) row+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px"><span style="color:var(--blue);font-size:10.5px;background:rgba(96,165,250,.14);border-radius:999px;padding:2px 8px">🔁 ${FREQL2[rec.frecuencia]} · ${rec.modo==="pct"?rec.valor+"% del alquiler":money(rec.valor)}</span><span data-inmrecdel="${inm.id}" data-i="${i}" style="color:var(--dim);font-size:10.5px;cursor:pointer;text-decoration:underline">quitar</span></div>`;
       row+=`<div style="display:flex;align-items:center;gap:8px">`;
       if(usdPais) row+=monedaSeg("inmgmon",inm.id,i,g.moneda);
       row+=`<input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmgasto="${inm.id}" data-i="${i}" value="${g.monto||""}" placeholder="0" style="flex:1;min-width:0;padding:8px 10px">`;
@@ -1347,7 +1387,7 @@ function wireInm(key){
   if($("imReset"))$("imReset").onclick=()=>{ const d=new Date(); state.inmMes=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); renderInm(); };
 
   if($("addInm"))$("addInm").onclick=async()=>{
-    const inm={ id:uid(), nombre:"Nuevo inmueble", catGastos:DEFGI.slice(), meses:{} };
+    const inm={ id:uid(), nombre:"Nuevo inmueble", catGastos:DEFGI.slice(), meses:{}, recurrentes:DEFGI.map(()=>null) };
     cfg.inmuebles.push(inm); state.inmOpen=inm.id; await saveCfg(); renderInm();
   };
 
@@ -1398,30 +1438,44 @@ function wireInm(key){
     if(inm.catGastos.length<=1)return;
     const i=+b.dataset.i;
     inm.catGastos.splice(i,1);
+    if(Array.isArray(inm.recurrentes)) inm.recurrentes.splice(i,1);
     Object.values(inm.meses||{}).forEach(m=>{ if(Array.isArray(m.gastos)) m.gastos.splice(i,1); });
     await saveCfg(); renderInm();
   });
 
   v.querySelectorAll("[data-inmaddcat]").forEach(b=>b.onclick=async()=>{
     const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmaddcat); if(!inm)return;
-    inm.catGastos.push("Nuevo gasto"); await saveCfg(); renderInm();
+    inm.catGastos.push("Nuevo gasto"); if(Array.isArray(inm.recurrentes)) inm.recurrentes.push(null); await saveCfg(); renderInm();
   });
 
   v.querySelectorAll("[data-inmmodo]").forEach(b=>b.onclick=()=>{
-    const st=inmCalcState[b.dataset.inmmodo]||(inmCalcState[b.dataset.inmmodo]={modo:"pct",valor:13,cat:0});
+    const st=inmCalcState[b.dataset.inmmodo]||(inmCalcState[b.dataset.inmmodo]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
     st.modo=b.dataset.modo; if(st.modo==="fijo"&&st.valor===13) st.valor=0; renderInm();
   });
+  v.querySelectorAll("[data-inmrecchk]").forEach(el=>el.onclick=()=>{
+    const st=inmCalcState[el.dataset.inmrecchk]||(inmCalcState[el.dataset.inmrecchk]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
+    st.rec=!st.rec; renderInm();
+  });
+  v.querySelectorAll("[data-inmrecfreq]").forEach(sel=>sel.onchange=()=>{
+    const st=inmCalcState[sel.dataset.inmrecfreq]||(inmCalcState[sel.dataset.inmrecfreq]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
+    st.freq=sel.value;
+  });
+  v.querySelectorAll("[data-inmrecdel]").forEach(el=>el.onclick=async()=>{
+    const inm=cfg.inmuebles.find(x=>x.id===el.dataset.inmrecdel); if(!inm)return;
+    if(Array.isArray(inm.recurrentes)) inm.recurrentes[+el.dataset.i]=null;
+    await saveCfg(); renderInm();
+  });
   v.querySelectorAll("[data-inmcalcval]").forEach(inp=>inp.onchange=()=>{
-    const st=inmCalcState[inp.dataset.inmcalcval]||(inmCalcState[inp.dataset.inmcalcval]={modo:"pct",valor:13,cat:0});
+    const st=inmCalcState[inp.dataset.inmcalcval]||(inmCalcState[inp.dataset.inmcalcval]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
     st.valor=Math.max(0,+inp.value||0);
   });
   v.querySelectorAll("[data-inmcalccat]").forEach(sel=>sel.onchange=()=>{
-    const st=inmCalcState[sel.dataset.inmcalccat]||(inmCalcState[sel.dataset.inmcalccat]={modo:"pct",valor:13,cat:0});
+    const st=inmCalcState[sel.dataset.inmcalccat]||(inmCalcState[sel.dataset.inmcalccat]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
     st.cat=+sel.value;
   });
   v.querySelectorAll("[data-inmcalcgo]").forEach(b=>b.onclick=async()=>{
     const inm=cfg.inmuebles.find(x=>x.id===b.dataset.inmcalcgo); if(!inm)return;
-    const st=inmCalcState[inm.id]||{modo:"pct",valor:13,cat:0};
+    const st=inmCalcState[inm.id]||{modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"};
     const key=state.inmMes; const m=mesData(inm,key);
     let monto;
     if(st.modo==="pct"){
@@ -1431,7 +1485,11 @@ function wireInm(key){
     } else { monto=Math.round((st.valor||0)*100)/100; }
     if(!monto){ alert("Ponga un valor mayor a 0."); return; }
     m.gastos[st.cat]={monto,moneda:"local",tc:0};
-    await saveCfg(); renderInm(); showToast(`${esc(inm.catGastos[st.cat])}: ${money(monto)}`);
+    if(st.rec){
+      if(!Array.isArray(inm.recurrentes)) inm.recurrentes=inm.catGastos.map(()=>null);
+      inm.recurrentes[st.cat]={frecuencia:st.freq,modo:st.modo,valor:st.valor,mesInicio:key};
+    }
+    await saveCfg(); renderInm(); showToast(`${esc(inm.catGastos[st.cat])}: ${money(monto)}${st.rec?" · repetirá "+({mensual:"cada mes",trimestral:"cada 3 meses",semestral:"cada 6 meses",anual:"cada año"}[st.freq]):""}`);
   });
 
   v.querySelectorAll("[data-inmsave]").forEach(b=>b.onclick=async()=>{
