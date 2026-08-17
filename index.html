@@ -996,7 +996,8 @@ function renderMov(){
   }
   h+=`<div class="periods" id="mvPer">`+["dia","semana","mes","anio","total"].map(p=>`<button data-p="${p}" class="${state.movPeriod===p?'on':''}">${{dia:"Día",semana:"Semana",mes:"Mes",anio:"Año",total:"Total"}[p]}</button>`).join("")+`</div>`;
   h+=perBlock("mm");
-  h+=`<div style="display:flex;gap:8px"><button class="cxbtn" id="mvVerif" style="flex:1">✓ Verificar con el estado de cuenta</button><button class="cxbtn" id="mvDup" style="flex:0 0 auto;padding-left:14px;padding-right:14px">🔍 Duplicados</button></div>`;
+  h+=`<button class="cxbtn" id="mvVerif">✓ Verificar con el estado de cuenta</button>`;
+  h+=`<button class="cxbtn" id="mvDup" style="background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.35);margin-top:-4px">🔍 Revisar duplicados</button>`;
   if(!set.length){ h+=`<div class="empty" style="padding:40px 10px">🧾<br>No hay movimientos en ${esc(movLabel.toLowerCase())}.<br>Toque <b>+</b> para agregar.</div>`; }
   else{ let last="";
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
