@@ -409,8 +409,14 @@
       <button id="pkTotal" class="pkquick">Todo</button>
     </div>
     <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:13px">
-      <div style="color:var(--muted);font-size:12px;margin-bottom:6px">Ver un día exacto</div>
-      <input type="date" id="pkDate" class="field">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Ver un día exacto</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:9px">
+        <button id="pkDayPrevM" class="pkarrow">‹</button>
+        <span id="pkDayLabel" style="color:var(--ink);font-size:14px;font-weight:700;min-width:120px;text-align:center"></span>
+        <button id="pkDayNextM" class="pkarrow">›</button>
+      </div>
+      <div id="pkDow" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px"></div>
+      <div id="pkDays" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
     </div>
     <button class="cancel" id="pkCancel">Cerrar</button>
   </div>
@@ -1617,13 +1623,29 @@ window.openDetalle=tipo=>{
 };
 function closeDetalle(){ $("detalle").classList.add("hidden"); }
 let pkYear=null; let pickerCtx="panel";
-window.openPicker=(ctx)=>{ pickerCtx=ctx||"panel"; pkYear=mesRefY(); $("pkDate").value=state.diaRef||today(); renderPicker(); $("picker").classList.remove("hidden"); };
+let pkDayY=null, pkDayM=null;
+window.openPicker=(ctx)=>{ pickerCtx=ctx||"panel"; pkYear=mesRefY();
+  const ref=state.diaRef||today(); const [ry,rm]=ref.split("-").map(Number); pkDayY=ry; pkDayM=rm-1;
+  renderPicker(); $("picker").classList.remove("hidden"); };
 function curMovOrPanelPeriod(){ return pickerCtx==="mov"?state.movPeriod:state.period; }
 function pkApply(period){ if(pickerCtx==="mov"){ state.movPeriod=period; closePicker(); renderMov(); } else { state.period=period; closePicker(); renderPanel(); } buildSidebar(); }
 function renderPicker(){
   $("pkYear").textContent=pkYear;
   $("pkMonths").innerHTML=MESL.map((m,i)=>`<button data-m="${i}" class="${(curMovOrPanelPeriod()==='mes'&&mesRefY()===pkYear&&mesRefM()===i)?'on':''}">${m.slice(0,3)}</button>`).join("");
   $("pkMonths").querySelectorAll("button").forEach(b=>b.onclick=()=>{ state.mesRef=pkYear+"-"+String(+b.dataset.m+1).padStart(2,"0"); pkApply("mes"); });
+  renderPkDays();
+}
+function renderPkDays(){
+  $("pkDayLabel").textContent=MESL[pkDayM]+" "+pkDayY;
+  $("pkDow").innerHTML=["L","M","M","J","V","S","D"].map(d=>`<div style="text-align:center;color:var(--dim);font-size:10px">${d}</div>`).join("");
+  const first=new Date(pkDayY,pkDayM,1); const startDow=(first.getDay()+6)%7; // lunes=0
+  const dias=new Date(pkDayY,pkDayM+1,0).getDate();
+  const sel=state.diaRef;
+  let cells=""; for(let i=0;i<startDow;i++) cells+=`<div></div>`;
+  for(let d=1;d<=dias;d++){ const iso=pkDayY+"-"+pad2(pkDayM+1)+"-"+pad2(d); const isSel=sel===iso; const isToday=today()===iso;
+    cells+=`<button data-d="${d}" style="aspect-ratio:1;border-radius:9px;font-size:12px;font-weight:${isSel?800:500};background:${isSel?'var(--accent)':'transparent'};color:${isSel?'var(--acc-ink)':isToday?'var(--accent2)':'var(--soft)'};border:${isToday&&!isSel?'1px solid var(--accent2)':'1px solid transparent'}">${d}</button>`; }
+  $("pkDays").innerHTML=cells;
+  $("pkDays").querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{ const iso=pkDayY+"-"+pad2(pkDayM+1)+"-"+pad2(+b.dataset.d); state.diaRef=iso; state.mesRef=iso.slice(0,7); pkApply("dia"); });
 }
 function closePicker(){ $("picker").classList.add("hidden"); }
 
@@ -1913,10 +1935,11 @@ $("detalle").onclick=e=>{ if(e.target.id==="detalle")closeDetalle(); };
 $("pkClose").onclick=closePicker; $("pkCancel").onclick=closePicker;
 $("pkPrevY").onclick=()=>{ pkYear--; renderPicker(); };
 $("pkNextY").onclick=()=>{ pkYear++; renderPicker(); };
+$("pkDayPrevM").onclick=()=>{ pkDayM--; if(pkDayM<0){ pkDayM=11; pkDayY--; } renderPkDays(); };
+$("pkDayNextM").onclick=()=>{ pkDayM++; if(pkDayM>11){ pkDayM=0; pkDayY++; } renderPkDays(); };
 $("pkHoy").onclick=()=>{ const d=new Date(); state.mesRef=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); pkApply("mes"); };
 $("pkAnio").onclick=()=>{ state.mesRef=pkYear+"-01"; pkApply("anio"); };
 $("pkTotal").onclick=()=>{ pkApply("total"); };
-$("pkDate").onchange=()=>{ const v=$("pkDate").value; if(v){ state.diaRef=v; state.mesRef=v.slice(0,7); pkApply("dia"); } };
 $("picker").onclick=e=>{ if(e.target.id==="picker")closePicker(); };
 $("cxClose").onclick=closeConcil; $("cxCancel").onclick=closeConcil;
 $("dupClose").onclick=closeDup; $("dupCancel").onclick=closeDup;
