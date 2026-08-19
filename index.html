@@ -862,7 +862,7 @@ function renderPanel(){
   const usdToggle = CUR[state.pais].usd ? `<div class="seg"><button id="curCRC" class="${state.verUSD?'':'on'}">${CUR[state.pais].sym}</button><button id="curUSD" class="${state.verUSD?'on':''}">$</button></div>` : "";
   const rateNote = (state.verUSD&&CUR[state.pais].usd)?` · 1 USD = ${CUR[state.pais].sym}${rate()}`:"";
 
-  let h=`<div class="mtop"><div><h2>${esc(monthTitle())}</h2><div class="sub">Hoy ${hoyTxt()} · Disponible acumulado ${money(disp)}${noVer?` · <span class="warn">${noVer} sin verificar</span>`:""}${rateNote}</div></div>
+  let h=`<div class="mtop"><div><h2>${esc(monthTitle())}</h2><div class="sub">Hoy ${hoyTxt()}${noVer?` · <span class="warn">${noVer} sin verificar</span>`:""}${rateNote}</div></div>
     <div class="toolr mtophide">${usdToggle}</div></div>`;
   h+=`<div class="mnav-row"><button id="mPrev" aria-label="Mes anterior">‹</button><button id="mCur">${calIconHTML()} ${esc(mesRefLabel())}${esMesActual()?"":" ·"}</button><button id="mNext" aria-label="Mes siguiente">›</button>${esMesActual()?"":'<button id="mReset">Hoy</button>'}</div>`;
 
@@ -883,13 +883,15 @@ function renderPanel(){
     const pa=Math.max(0,Math.min(100-pg,Math.round(Math.max(0,totAho)/den*100)));
     const pq=Math.max(0,100-pg-pa);
     h+=`<div class="card balbar" style="margin-bottom:11px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:11px;flex-wrap:wrap">
-        <div><div class="bl">Entró</div><div class="bv" style="color:var(--green)">${money(totIng)}</div></div>
-        <div style="text-align:center"><div class="bl">Gastado</div><div class="bv" style="color:var(--red)">${money(totGasAll)}</div></div>
-        <div style="text-align:right"><div class="bl" style="color:var(--accent2)">Disponible del mes</div><div class="bv" style="color:${queda>=0?'var(--ink)':'var(--red)'}">${money(queda)}</div></div>
+      <div style="color:var(--muted);font-size:12.5px;margin-bottom:2px">Disponible acumulado</div>
+      <div class="num" style="font-weight:700;font-size:28px;color:${disp>=0?'var(--green)':'var(--red)'};margin-bottom:13px">${money(disp)}</div>
+      <div style="display:flex;justify-content:space-between;gap:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:11px;margin-bottom:11px;flex-wrap:wrap">
+        <div><div class="bl">Entró</div><div class="bv" style="font-size:14px;color:var(--green)">${money(totIng)}</div></div>
+        <div style="text-align:center"><div class="bl">Gastado</div><div class="bv" style="font-size:14px;color:var(--red)">${money(totGasAll)}</div></div>
+        <div style="text-align:right"><div class="bl">Ahorrado</div><div class="bv" style="font-size:14px;color:var(--blue)">${money(Math.abs(totAho))}</div></div>
       </div>
       <div class="balrow"><div style="width:${pq}%;background:var(--green)"></div><div style="width:${pa}%;background:var(--blue)"></div><div style="width:${pg}%;background:var(--red)"></div></div>
-      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Disponible ${pq}%</span>${totAho?`<span style="color:var(--blue);font-size:11px"><span class="dot" style="background:var(--blue)"></span> ${totAho>=0?"Ahorrado":"Retirado de ahorro"} ${money(Math.abs(totAho))}</span>`:""}<span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:7px"><span style="color:var(--green);font-size:11px"><span class="dot" style="background:var(--green)"></span> Sin gastar este período ${pq}%</span>${totAho?`<span style="color:var(--blue);font-size:11px"><span class="dot" style="background:var(--blue)"></span> ${totAho>=0?"Ahorrado":"Retirado de ahorro"} ${money(Math.abs(totAho))}</span>`:""}<span style="color:var(--red);font-size:11px"><span class="dot" style="background:var(--red)"></span> Gastado ${pg}%</span></div>
       ${extList.length?`<div style="border-top:1px solid rgba(255,255,255,.06);margin-top:10px;padding-top:9px">
         <div style="color:var(--dim);font-size:11px;margin-bottom:6px">🏦 Pagado desde otra cuenta (no incluido arriba)</div>
         ${extList.slice(0,4).map(t=>`<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:2px 0"><span style="color:var(--soft)">${esc(t.descripcion||t.categoria)}</span><span style="color:var(--soft);font-weight:700">${money(t.monto)}</span></div>`).join("")}
