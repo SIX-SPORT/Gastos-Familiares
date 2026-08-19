@@ -357,7 +357,7 @@
     </div>
     <div class="row">
       <div class="fld"><label>Categoría</label><select class="field" id="fCat"></select></div>
-      <div class="fld"><label>Monto</label><input class="field num" type="text" inputmode="decimal" id="fMonto" placeholder="0"></div>
+      <div class="fld"><label>Monto</label><input class="field num" type="number" inputmode="decimal" step="0.01" min="0" id="fMonto" placeholder="0"></div>
     </div>
     <div class="fld" style="margin-bottom:9px"><label>Descripción (opcional)</label><input class="field" id="fDesc" placeholder="Ej. compra semanal"></div>
     <div class="fld hidden" id="fExtCurWrap" style="margin-bottom:9px">
@@ -2048,7 +2048,10 @@ function renderCx(verificadosAhora){
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:11.5px;color:${rowPick===null?'var(--amber)':'var(--soft)'}">${label}</span><button class="cxchg" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
       <span style="color:var(--dim)">·</span><span style="font-size:11.5px;color:var(--soft)">${esc(r.cat||catDefault(r.tipo,r.desc))}</span><button class="cxchgcat" data-i="${i}" style="font-size:11px;color:var(--accent);font-weight:600">cambiar</button>
       <button class="cxadd" data-i="${i}" style="margin-left:auto;font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;background:${rowPick===null?'rgba(255,255,255,.06)':'var(--accent)'};color:${rowPick===null?'var(--dim)':'var(--acc-ink)'}">Agregar</button></div>
-      ${r.tipo!=="ahorro"&&r.desc?`<button class="cxaho" data-i="${i}" style="margin-top:6px;font-size:11px;color:var(--blue);font-weight:600;background:none;border:none;padding:0">🏦 Es un movimiento entre mis cuentas</button>`:""}`;
+      ${r.tipo!=="ahorro"&&r.desc?`<div style="display:flex;gap:10px;margin-top:6px">
+        <button class="cxaho" data-i="${i}" data-remember="0" style="font-size:11px;color:var(--blue);font-weight:600;background:none;border:none;padding:0">🏦 Es un movimiento entre mis cuentas (solo esta vez)</button>
+      </div>
+      <div style="margin-top:2px"><button class="cxaho" data-i="${i}" data-remember="1" style="font-size:10.5px;color:var(--dim);font-weight:600;background:none;border:none;padding:0;text-decoration:underline">recordar esta descripción para siempre</button></div>`:""}`;
     if(r.editing) row+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${cfg.personas.map((p,pi)=>`<button class="cxrpick" data-i="${i}" data-pi="${pi}" style="font-size:11px;padding:4px 9px;border-radius:999px;font-weight:600;background:${pi===rowPick?'var(--accbg)':'rgba(255,255,255,.05)'};color:${pi===rowPick?'var(--ink)':'var(--dim)'};border:1px solid ${pi===rowPick?'var(--accbd)':'transparent'}">${esc(p)}</button>`).join("")}</div>`;
     if(r.editingCat) row+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${catList.map(c=>`<button class="cxcpick" data-i="${i}" data-c="${esc(c)}" style="font-size:11px;padding:4px 9px;border-radius:999px;font-weight:600;background:${c===r.cat?'var(--accbg)':'rgba(255,255,255,.05)'};color:${c===r.cat?'var(--ink)':'var(--dim)'};border:1px solid ${c===r.cat?'var(--accbd)':'transparent'}">${esc(c)}</button>`).join("")}</div>`;
     row+=`</div>`;
@@ -2076,7 +2079,10 @@ function renderCx(verificadosAhora){
   });
   $("cxResult").querySelectorAll(".cxaho").forEach(b=>b.onclick=async()=>{
     const r=cxRes[+b.dataset.i]; r.retiro=(r.tipo==="ingreso"); r.tipo="ahorro"; r.cat=catDefault("ahorro");
-    const d=(r.desc||"").trim().toUpperCase(); if(d){ cfg.ahorroRecordados=cfg.ahorroRecordados||{}; cfg.ahorroRecordados[d]=true; await saveCfg(); }
+    if(b.dataset.remember==="1"){
+      const d=(r.desc||"").trim().toUpperCase();
+      if(d){ cfg.ahorroRecordados=cfg.ahorroRecordados||{}; cfg.ahorroRecordados[d]=true; await saveCfg(); showToast("Se va a recordar siempre"); }
+    }
     renderCx();
   });
   $("cxResult").querySelectorAll(".cxadd").forEach(b=>b.onclick=async()=>{
