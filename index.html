@@ -467,7 +467,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -518,7 +518,7 @@ const DEF_MERCHANT_CATS=[
   {k:"COMISION",c:"Comisiones bancarias"},{k:"CARGO COMISION",c:"Comisiones bancarias"}
 ];
 function defaultCfg(pais){
-  return { hogar:"Nuestro hogar", tc:CUR[pais].tc, tcAuto:true, tcFecha:"", meta:0, presupuesto:0, ingresoMensual:0,
+  return { hogar:"Nuestro hogar", tc:CUR[pais].tc, tcCompra:0, tcVenta:0, tcFuente:"", tcAuto:true, tcFecha:"", meta:0, presupuesto:0, ingresoMensual:0,
     personas:["Mamá","Papá","Hijo"],
     gastos:DEFG.map((n,i)=>({n,c:PAL[i%PAL.length]})),
     ingresos:["Salario","Extra","Otro"].map((n,i)=>({n,c:PAL[i%PAL.length]})),
@@ -573,6 +573,9 @@ function migrateCfg(pais,raw){
   return {
     hogar: raw.hogar || d.hogar,
     tc: (typeof raw.tc==="number"&&raw.tc>0)?raw.tc:(typeof raw.tipoCambio==="number"&&raw.tipoCambio>0?raw.tipoCambio:d.tc),
+    tcCompra: (typeof raw.tcCompra==="number"&&raw.tcCompra>0)?raw.tcCompra:0,
+    tcVenta: (typeof raw.tcVenta==="number"&&raw.tcVenta>0)?raw.tcVenta:0,
+    tcFuente: typeof raw.tcFuente==="string"?raw.tcFuente:"",
     tcAuto: typeof raw.tcAuto==="boolean"?raw.tcAuto:true,
     tcFecha: typeof raw.tcFecha==="string"?raw.tcFecha:"",
     meta: typeof raw.meta==="number"?raw.meta:0,
@@ -599,8 +602,16 @@ let inmCalcState={};
 
 /* ---------- firebase ---------- */
 let fbApp,auth,db,txRef,cfgRef,unsubTx=null,unsubCfg=null,firstCfg=true;
+// cfgReady=false mientras no tengamos todavía una respuesta real de Firestore para la config
+// (categorías, personas, etc). Se usa para no pintar listas incompletas en el modal.
+let cfgReady=false, cfgRetryTimer=null, cfgRetryDelay=1000;
 try{ fbApp=initializeApp(window.FIREBASE_CONFIG); auth=getAuth(fbApp); db=getFirestore(fbApp);
-     setPersistence(auth,browserLocalPersistence).catch(()=>{}); }catch(e){ console.warn("Firebase:",e); }
+     setPersistence(auth,browserLocalPersistence).catch(()=>{});
+     // Cache local (IndexedDB): si hay una config ya vista antes, Firestore la sirve
+     // de inmediato desde disco mientras confirma con el servidor, en vez de dejar
+     // la pantalla con los valores por defecto durante la primera carga.
+     enableIndexedDbPersistence(db).catch(e=>console.warn("Persistencia offline no disponible:",e.code||e));
+   }catch(e){ console.warn("Firebase:",e); }
 
 function refsFor(pais){ const col=CUR[pais].col; txRef=doc(db,col,"tx"); cfgRef=doc(db,col,"config"); }
 async function saveTx(){ try{ await setDoc(txRef,{items:tx}); }catch(e){ console.warn(e); } }
@@ -608,14 +619,25 @@ async function saveCfg(){ try{ await setDoc(cfgRef,cfg); return true; }catch(e){
 
 function startSync(){
   if(unsubTx)unsubTx(); if(unsubCfg)unsubCfg();
-  refsFor(state.pais); firstCfg=true; tx=[]; cfg=defaultCfg(state.pais);
+  if(cfgRetryTimer){ clearTimeout(cfgRetryTimer); cfgRetryTimer=null; }
+  refsFor(state.pais); firstCfg=true; cfgReady=false; cfgRetryDelay=1000; tx=[]; cfg=defaultCfg(state.pais);
+  renderAll(); // si el modal de agregar quedó abierto (p.ej. al cambiar de país), refleja "sincronizando"
   unsubTx=onSnapshot(txRef, s=>{ tx=(s.exists()&&Array.isArray(s.data().items))?s.data().items:[]; renderAll(); }, e=>console.warn(e));
   unsubCfg=onSnapshot(cfgRef, s=>{
     if(s.exists()){ cfg=migrateCfg(state.pais,s.data()); }
     else { cfg=defaultCfg(state.pais); if(firstCfg) setDoc(cfgRef,cfg).catch(()=>{}); }
-    firstCfg=false; buildSidebar(); renderAll();
+    firstCfg=false; cfgReady=true; cfgRetryDelay=1000;
+    buildSidebar(); renderAll();
     checkTipoCambioDiario(state.pais);
-  }, e=>console.warn(e));
+  }, e=>{
+    console.warn("Config sync:",e);
+    // Reintento con backoff: si la primera suscripción falla (red inestable, etc.)
+    // no nos quedamos colgados esperando para siempre.
+    if(!cfgReady){
+      cfgRetryTimer=setTimeout(()=>{ if(!cfgReady && state.pais) startSync(); }, cfgRetryDelay);
+      cfgRetryDelay=Math.min(cfgRetryDelay*2,30000);
+    }
+  });
 }
 
 /* ---------- lista de países (dinámica, editable en Ajustes) ---------- */
@@ -670,20 +692,41 @@ async function checkTipoCambioDiario(pais){
   if(cfg.tcFecha===today()) return;
   await fetchTipoCambio();
 }
+async function guardarTipoCambioObtenido(venta,compra,fuente){
+  cfg.tc=Math.round(venta*100)/100;
+  cfg.tcVenta=Math.round(venta*100)/100;
+  cfg.tcCompra=compra?Math.round(compra*100)/100:0;
+  cfg.tcFuente=fuente;
+  cfg.tcFecha=today();
+  await saveCfg();
+  if(state.view==="Ajustes")renderSet(); else buildSidebar();
+}
 async function fetchTipoCambio(){
   const pais=state.pais; const c=CUR[pais]; if(!c.usd||tcFetching) return false;
   tcFetching=true;
+  // 1) Fuente oficial: BCCR, a través de nuestra Cloud Function (evita CORS/token en el cliente).
+  //    Solo aplica a Costa Rica, que es el país que reporta el BCCR.
+  if(pais==="CR" && window.BCCR_FUNCTION_URL){
+    try{
+      const res=await fetch(window.BCCR_FUNCTION_URL);
+      const data=await res.json();
+      if(data&&data.ok&&data.venta>0&&pais===state.pais){
+        await guardarTipoCambioObtenido(data.venta,data.compra,"BCCR");
+        tcFetching=false; return true;
+      }
+      console.warn("BCCR sin datos válidos:",data&&data.error);
+    }catch(e){ console.warn("Tipo de cambio BCCR:",e); }
+  }
+  // 2) Respaldo: tasa de mercado general, solo si el BCCR no está disponible.
   try{
     const res=await fetch("https://open.er-api.com/v6/latest/USD");
     const data=await res.json();
     const rate=data&&data.rates?data.rates[c.code]:null;
     if(rate&&rate>0&&pais===state.pais){
-      cfg.tc=Math.round(rate*100)/100; cfg.tcFecha=today();
-      await saveCfg();
-      if(state.view==="Ajustes")renderSet(); else buildSidebar();
+      await guardarTipoCambioObtenido(rate,0,"estimado");
       tcFetching=false; return true;
     }
-  }catch(e){ console.warn("Tipo de cambio:",e); }
+  }catch(e){ console.warn("Tipo de cambio (respaldo):",e); }
   tcFetching=false; return false;
 }
 
@@ -1621,10 +1664,17 @@ function renderSet(){
     <input class="field" id="setHogar" value="${esc(cfg.hogar)}" style="margin-bottom:9px">`;
   if(CUR[state.pais].usd){
     const tcEstado = cfg.tcFecha===today() ? "Actualizado hoy" : (cfg.tcFecha?`Última actualización: ${fechaLarga(cfg.tcFecha)}`:"Aún no se ha actualizado");
+    const fuenteLbl = cfg.tcFuente==="BCCR" ? " · fuente: Banco Central de Costa Rica" : (cfg.tcFuente==="estimado" ? " · fuente: estimado (BCCR no disponible)" : "");
     h+=`<label style="color:var(--muted);font-size:11px;margin-left:2px">Tipo de cambio (1 USD = ${CUR[state.pais].sym} …)</label>
-      <input class="field num" id="setTc" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.tc}" style="margin-bottom:6px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px">
-        <span style="color:var(--dim);font-size:11px" id="setTcEstado">${esc(tcEstado)}</span>
+      <input class="field num" id="setTc" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.tc}" style="margin-bottom:6px">`;
+    if(cfg.tcCompra>0||cfg.tcVenta>0){
+      h+=`<div style="display:flex;gap:14px;margin:0 2px 6px;font-size:12px;color:var(--soft)">
+        <span>Compra: <b class="num">${CUR[state.pais].sym}${cfg.tcCompra||"—"}</b></span>
+        <span>Venta: <b class="num">${CUR[state.pais].sym}${cfg.tcVenta||"—"}</b></span>
+      </div>`;
+    }
+    h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px">
+        <span style="color:var(--dim);font-size:11px" id="setTcEstado">${esc(tcEstado+fuenteLbl)}</span>
         <span id="setTcNow" style="color:var(--accent2);font-size:11px;font-weight:700;cursor:pointer">Actualizar ahora</span>
       </div>
       <div class="chk ${cfg.tcAuto!==false?'on':''}" id="setTcAuto" style="margin-bottom:9px"><span class="bx">✓</span><span>Actualizar automáticamente cada día</span></div>`;
@@ -1710,7 +1760,7 @@ function renderSet(){
     </div></div>`;
 
   $("viewSet").innerHTML=h;
-  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.ingresoMensual=Math.max(0,+$("setIngreso").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
+  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); cfg.tcFuente="manual"; } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.ingresoMensual=Math.max(0,+$("setIngreso").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
   if($("setSugerir"))$("setSugerir").onclick=()=>{ const ing=Math.max(0,+$("setIngreso").value||0); if(!ing){ $("setIngreso").focus(); return; } $("setPre").value=Math.round(ing*0.8); showToast("Sugerido: 80% del ingreso (necesidades + gustos, regla 50/30/20)"); };
   if($("setTcNow"))$("setTcNow").onclick=async()=>{ $("setTcNow").textContent="Actualizando…"; const ok=await fetchTipoCambio(); if(!ok){ $("setTcNow").textContent="Actualizar ahora"; alert("No se pudo obtener el tipo de cambio. Revise su conexión."); } };
   if($("setTcAuto"))$("setTcAuto").onclick=async()=>{ cfg.tcAuto=!(cfg.tcAuto!==false); await saveCfg(); renderSet(); };
@@ -1773,10 +1823,26 @@ function showToast(msg){
 
 /* ============================ MODAL ============================ */
 let mdQuienEditOld=null;
+// Valores "en espera" cuando se abre el modal de Editar antes de que cfg esté lista:
+// se aplican en cuanto llega la config real, para no perder la selección original.
+let pendingModalValues=null;
 function fillModalSelects(){
+  const saveBtn=$("mdSave");
+  if(!cfgReady){
+    // Estado de carga explícito: nunca mostramos una lista a medias.
+    $("fQuien").innerHTML='<option value="">Sincronizando…</option>';
+    $("fCat").innerHTML='<option value="">Sincronizando…</option>';
+    $("fQuien").disabled=true; $("fCat").disabled=true;
+    if(saveBtn){ saveBtn.disabled=true; saveBtn.textContent="Sincronizando…"; }
+    return;
+  }
+  $("fQuien").disabled=false; $("fCat").disabled=false;
+  if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent="Guardar"; }
   const enEdicion=$("fQuienNuevoWrap")&&!$("fQuienNuevoWrap").classList.contains("hidden");
   if(!enEdicion){
+  const prevQuien=pendingModalValues?pendingModalValues.quien:$("fQuien").value;
   $("fQuien").innerHTML=cfg.personas.map(p=>`<option>${esc(p)}</option>`).join("")+`<option value="__nueva__">+ Agregar persona…</option>`;
+  if(cfg.personas.includes(prevQuien)) $("fQuien").value=prevQuien;
   $("fQuien").onchange=()=>{
     mdQuienEditOld=null; $("fQuienNuevoWrap").classList.add("hidden");
     if($("fQuien").value==="__nueva__"){ $("fQuienNuevoWrap").classList.remove("hidden"); $("fQuienNuevo").placeholder="Nombre de la persona nueva, y confirmá"; $("fQuienNuevo").value=""; setTimeout(()=>$("fQuienNuevo").focus(),30); }
@@ -1799,9 +1865,18 @@ function fillModalSelects(){
   }
   $("fQuienNuevo").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); commitQuienInput(); } };
   $("fQuienNuevoOk").onclick=e=>{ e.preventDefault(); commitQuienInput(); };
-  fillCat();
+  const prevCat=pendingModalValues?pendingModalValues.categoria:null;
+  fillCat(prevCat);
+  pendingModalValues=null;
 }
-function fillCat(){ const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros; $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join(""); }
+function fillCat(forzarValor){
+  if(!cfgReady){ $("fCat").innerHTML='<option value="">Sincronizando…</option>'; $("fCat").disabled=true; return; }
+  $("fCat").disabled=false;
+  const list=state.tab==="gasto"?cfg.gastos:state.tab==="ingreso"?cfg.ingresos:cfg.ahorros;
+  const prev=forzarValor!=null?forzarValor:$("fCat").value;
+  $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join("");
+  if(list.some(c=>c.n===prev)) $("fCat").value=prev;
+}
 function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); $("fFijoWrap").classList.toggle("hidden",t!=="gasto"); $("fRetiroWrap").classList.toggle("hidden",t!=="ahorro"); $("fDeAhorroWrap").classList.toggle("hidden",t!=="ingreso"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); mdFijo=false; $("fFijo").classList.remove("on"); } if(t!=="ahorro"){ mdRetiro=false; $("fRetiro").classList.remove("on"); } if(t!=="ingreso"){ mdDeAhorro=false; $("fDeAhorro").classList.remove("on"); } updateExtCurUI(); }
 let mdVerif=false, mdExterno=false, mdExtCur="local", mdFijo=false, mdRetiro=false, mdDeAhorro=false;
 function updateExtCurUI(){
@@ -1812,10 +1887,13 @@ function updateExtCurUI(){
   const v=parseMonto($("fMonto").value);
   $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+(Math.round(v*rate()*100)/100).toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})) : "";
 }
-function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
+function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null; pendingModalValues=null;
   setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdFijo=false; $("fFijo").classList.remove("on"); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
-  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fQuien").value=t.quien||cfg.personas[0]; fillCat(); $("fCat").value=t.categoria; $("fDesc").value=t.descripcion||""; mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo); mdRetiro=!!t.retiro; $("fRetiro").classList.toggle("on",mdRetiro);
+  setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fDesc").value=t.descripcion||"";
+  if(cfgReady){ $("fQuien").value=t.quien||cfg.personas[0]; fillCat(t.categoria); }
+  else { pendingModalValues={ quien:t.quien||"", categoria:t.categoria||"" }; } // se aplica al llegar la config
+  mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo); mdRetiro=!!t.retiro; $("fRetiro").classList.toggle("on",mdRetiro);
   mdExtCur=(t.montoUsd?"usd":"local"); $("fMonto").value=(mdExtCur==="usd"?t.montoUsd:t.monto); updateExtCurUI(); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
 const TIPO_DET={ingreso:{lbl:"Ingresos",col:"var(--green)",sg:"+"},gasto:{lbl:"Gastos",col:"var(--red)",sg:"-"},ahorro:{lbl:"Ahorros",col:"var(--blue)",sg:"+"}};
@@ -2107,6 +2185,7 @@ function renderCx(verificadosAhora){
   };
 }
 async function saveModal(){
+  if(!cfgReady){ showToast("Un momento, sincronizando datos…"); return; }
   const raw=parseMonto($("fMonto").value); if(!raw||raw<=0||isNaN(raw)){ $("fMonto").focus(); return; }
   const usarUsd=(mdExtCur==="usd"&&CUR[state.pais].usd);
   const monto=usarUsd?Math.round(raw*rate()*100)/100:Math.abs(raw);
