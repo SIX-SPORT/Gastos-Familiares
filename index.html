@@ -704,20 +704,21 @@ async function guardarTipoCambioObtenido(venta,compra,fuente){
 async function fetchTipoCambio(){
   const pais=state.pais; const c=CUR[pais]; if(!c.usd||tcFetching) return false;
   tcFetching=true;
-  // 1) Fuente oficial: BCCR, a través de nuestra Cloud Function (evita CORS/token en el cliente).
-  //    Solo aplica a Costa Rica, que es el país que reporta el BCCR.
-  if(pais==="CR" && window.BCCR_FUNCTION_URL){
+  // 1) Fuente oficial: Ministerio de Hacienda de Costa Rica (dato tomado del BCCR).
+  //    Es pública, no requiere token ni registro. Solo aplica a Costa Rica.
+  if(pais==="CR"){
     try{
-      const res=await fetch(window.BCCR_FUNCTION_URL);
+      const res=await fetch("https://api.hacienda.go.cr/indicadores/tc/dolar");
       const data=await res.json();
-      if(data&&data.ok&&data.venta>0&&pais===state.pais){
-        await guardarTipoCambioObtenido(data.venta,data.compra,"BCCR");
+      const venta=data&&data.venta&&data.venta.valor;
+      const compra=data&&data.compra&&data.compra.valor;
+      if(venta>0&&pais===state.pais){
+        await guardarTipoCambioObtenido(venta,compra,"Hacienda/BCCR");
         tcFetching=false; return true;
       }
-      console.warn("BCCR sin datos válidos:",data&&data.error);
-    }catch(e){ console.warn("Tipo de cambio BCCR:",e); }
+    }catch(e){ console.warn("Tipo de cambio (Hacienda):",e); }
   }
-  // 2) Respaldo: tasa de mercado general, solo si el BCCR no está disponible.
+  // 2) Respaldo: tasa de mercado general, solo si Hacienda no responde (o para otros países).
   try{
     const res=await fetch("https://open.er-api.com/v6/latest/USD");
     const data=await res.json();
@@ -1664,7 +1665,7 @@ function renderSet(){
     <input class="field" id="setHogar" value="${esc(cfg.hogar)}" style="margin-bottom:9px">`;
   if(CUR[state.pais].usd){
     const tcEstado = cfg.tcFecha===today() ? "Actualizado hoy" : (cfg.tcFecha?`Última actualización: ${fechaLarga(cfg.tcFecha)}`:"Aún no se ha actualizado");
-    const fuenteLbl = cfg.tcFuente==="BCCR" ? " · fuente: Banco Central de Costa Rica" : (cfg.tcFuente==="estimado" ? " · fuente: estimado (BCCR no disponible)" : "");
+    const fuenteLbl = cfg.tcFuente==="Hacienda/BCCR" ? " · fuente: Ministerio de Hacienda (BCCR)" : (cfg.tcFuente==="estimado" ? " · fuente: estimado (Hacienda no disponible)" : "");
     h+=`<label style="color:var(--muted);font-size:11px;margin-left:2px">Tipo de cambio (1 USD = ${CUR[state.pais].sym} …)</label>
       <input class="field num" id="setTc" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.tc}" style="margin-bottom:6px">`;
     if(cfg.tcCompra>0||cfg.tcVenta>0){
