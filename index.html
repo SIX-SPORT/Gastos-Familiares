@@ -377,6 +377,8 @@
     </div>
     <div class="fld hidden" id="fDeAhorroWrap" style="margin-top:9px"><div class="chk" id="fDeAhorro"><span class="bx">✓</span><span>💰 Esto viene de mi cuenta de Ahorro Alto Rendimiento</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">No es dinero nuevo — se anota como retiro de ahorro, no como ingreso.</div>
     </div>
+    <div class="fld hidden" id="fEnviaAhorroWrap" style="margin-top:9px"><div class="chk" id="fEnviaAhorro"><span class="bx">✓</span><span>➡️ Me pagaron y lo envío a mi cuenta de Alto Rendimiento</span></div><div style="color:var(--dim);font-size:11px;margin-top:5px">Se anota como ingreso (queda en tus reportes) y a la vez como envío a Ahorro Alto Rendimiento, por el mismo monto, para que el Disponible no cambie.</div>
+    </div>
     <button class="save" id="mdSave">Guardar</button>
     <button class="del hidden" id="mdDel">Borrar</button>
     <button class="cancel" id="mdCancel">Cancelar</button>
@@ -1056,7 +1058,7 @@ function ahorroAltoCard(){
   const recientes=ahorros.slice().sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(a.id<b.id?1:-1)).slice(0,3);
   let h=`<div class="card" style="margin-bottom:11px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">
-      <span class="t" style="margin:0">🐷 Ahorro Alto Rendimiento</span>
+      <span class="t" style="margin:0">🏦 Ahorro Alto Rendimiento</span>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:${recientes.length?9:0}px">
       <div style="flex:1;text-align:center"><div style="color:var(--dim);font-size:10px">Enviado</div><div class="num" style="color:var(--blue);font-size:13.5px;font-weight:800">${money(enviado)}</div></div>
@@ -1130,12 +1132,13 @@ function renderMov(){
   h+=perBlock("mm");
   h+=`<button class="cxbtn" id="mvVerif">✓ Verificar con el estado de cuenta</button>`;
   h+=`<button class="cxbtn" id="mvDup" style="background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.35);margin-top:-4px">🔍 Revisar duplicados</button>`;
+  h+=ahorroAltoCard();
   if(!set.length){ h+=`<div class="empty" style="padding:40px 10px">🧾<br>No hay movimientos en ${esc(movLabel.toLowerCase())}.<br>Toque <b>+</b> para agregar.</div>`; }
   else{ let last="";
     for(const t of set){ if(t.fecha!==last){ h+=`<div class="day-head">${esc(fechaLarga(t.fecha))}</div>`; last=t.fecha; }
       const cls=t.tipo==="ingreso"?"i":t.tipo==="ahorro"?"a":"g"; const sign=(t.tipo==="gasto"||(t.tipo==="ahorro"&&t.retiro))?"-":"+";
       h+=`<div class="tx-item" data-mv="${t.id}">${catIconHTML(t.categoria,30)}
-        <div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta</span>`:""}${t.tipo==="ahorro"&&t.retiro?` · <span style="color:var(--blue)">Retiro de ahorro</span>`:""}${t.montoUsd?` · <span style="color:var(--accent2)">$${t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:""}</div></div>
+        <div style="flex:1;min-width:0"><div style="color:var(--ink);font-size:13px">${esc(t.descripcion||t.categoria)}</div><div style="color:var(--dim);font-size:11px">${esc(t.categoria)} · ${esc(t.quien||"")}${t.externo?` · <span style="color:var(--accent)">Otra cuenta</span>`:""}${t.tipo==="ahorro"&&t.retiro?` · <span style="color:var(--blue)">Retiro de ahorro</span>`:""}${t.tipo==="ahorro"&&!t.retiro?` · <span style="color:var(--blue)">🏦 Envío a Alto Rendimiento</span>`:""}${t.montoUsd?` · <span style="color:var(--accent2)">$${t.montoUsd.toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:""}</div></div>
         <span class="amt ${cls} num" style="font-size:13px">${sign}${money(t.monto)}</span>${t.verificado?'<span class="badge ok">✓</span>':'<span class="badge pend">pend.</span>'}</div>`;
     }
   }
@@ -1944,8 +1947,8 @@ function fillCat(forzarValor){
   $("fCat").innerHTML=list.map(c=>`<option>${esc(c.n)}</option>`).join("");
   if(list.some(c=>c.n===prev)) $("fCat").value=prev;
 }
-function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); $("fFijoWrap").classList.toggle("hidden",t!=="gasto"); $("fRetiroWrap").classList.toggle("hidden",t!=="ahorro"); $("fDeAhorroWrap").classList.toggle("hidden",t!=="ingreso"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); mdFijo=false; $("fFijo").classList.remove("on"); } if(t!=="ahorro"){ mdRetiro=false; $("fRetiro").classList.remove("on"); } if(t!=="ingreso"){ mdDeAhorro=false; $("fDeAhorro").classList.remove("on"); } updateExtCurUI(); }
-let mdVerif=false, mdExterno=false, mdExtCur="local", mdFijo=false, mdRetiro=false, mdDeAhorro=false;
+function setModalTipo(t){ state.tab=t; ["gasto","ingreso","ahorro"].forEach(x=>{ const b=$("t"+x[0].toUpperCase()+x.slice(1)); b.className=(x===t?"on "+x:""); }); fillCat(); $("fExternoWrap").classList.toggle("hidden",t!=="gasto"); $("fFijoWrap").classList.toggle("hidden",t!=="gasto"); $("fRetiroWrap").classList.toggle("hidden",t!=="ahorro"); $("fDeAhorroWrap").classList.toggle("hidden",t!=="ingreso"); $("fEnviaAhorroWrap").classList.toggle("hidden",t!=="ingreso"); if(t!=="gasto"){ mdExterno=false; $("fExterno").classList.remove("on"); mdFijo=false; $("fFijo").classList.remove("on"); } if(t!=="ahorro"){ mdRetiro=false; $("fRetiro").classList.remove("on"); } if(t!=="ingreso"){ mdDeAhorro=false; $("fDeAhorro").classList.remove("on"); mdEnviaAhorro=false; $("fEnviaAhorro").classList.remove("on"); } updateExtCurUI(); }
+let mdVerif=false, mdExterno=false, mdExtCur="local", mdFijo=false, mdRetiro=false, mdDeAhorro=false, mdEnviaAhorro=false;
 function updateExtCurUI(){
   const show=CUR[state.pais].usd;
   $("fExtCurWrap").classList.toggle("hidden",!show);
@@ -1955,12 +1958,12 @@ function updateExtCurUI(){
   $("fExtConv").textContent=(show && mdExtCur==="usd" && v>0) ? ("≈ "+CUR[state.pais].sym+(Math.round(v*rate()*100)/100).toLocaleString(CUR[state.pais].loc,{minimumFractionDigits:2,maximumFractionDigits:2})) : "";
 }
 function openAdd(pre){ state.editId=null; $("mdTitle").textContent="Agregar"; $("mdDel").classList.add("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null; pendingModalValues=null;
-  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdFijo=false; $("fFijo").classList.remove("on"); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
+  setModalTipo(pre&&pre.tipo?pre.tipo:"gasto"); $("fFecha").value=(pre&&pre.fecha)||today(); $("fMonto").value=(pre&&pre.monto)||""; $("fDesc").value=""; mdVerif=!!(pre&&pre.verif); $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!(pre&&pre.externo); $("fExterno").classList.toggle("on",mdExterno); mdFijo=false; $("fFijo").classList.remove("on"); mdDeAhorro=false; $("fDeAhorro").classList.remove("on"); mdEnviaAhorro=false; $("fEnviaAhorro").classList.remove("on"); mdExtCur="local"; updateExtCurUI(); $("modal").classList.remove("hidden"); if(pre&&pre.monto)setTimeout(()=>$("fMonto").focus(),50); }
 window.openMov=id=>{ const t=tx.find(x=>x.id===id); if(!t)return; state.editId=id; $("mdTitle").textContent="Editar"; $("mdDel").classList.remove("hidden"); $("fQuienNuevoWrap").classList.add("hidden"); mdQuienEditOld=null;
   setModalTipo(t.tipo); $("fFecha").value=t.fecha; $("fDesc").value=t.descripcion||"";
   if(cfgReady){ $("fQuien").value=t.quien||cfg.personas[0]; fillCat(t.categoria); }
   else { pendingModalValues={ quien:t.quien||"", categoria:t.categoria||"" }; } // se aplica al llegar la config
-  mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo); mdRetiro=!!t.retiro; $("fRetiro").classList.toggle("on",mdRetiro);
+  mdVerif=!!t.verificado; $("fVerif").classList.toggle("on",mdVerif); mdExterno=!!t.externo; $("fExterno").classList.toggle("on",mdExterno); mdFijo=!!t.fijoId; $("fFijo").classList.toggle("on",mdFijo); mdRetiro=!!t.retiro; $("fRetiro").classList.toggle("on",mdRetiro); mdDeAhorro=false; $("fDeAhorro").classList.remove("on"); mdEnviaAhorro=false; $("fEnviaAhorro").classList.remove("on");
   mdExtCur=(t.montoUsd?"usd":"local"); $("fMonto").value=(mdExtCur==="usd"?t.montoUsd:t.monto); updateExtCurUI(); $("modal").classList.remove("hidden"); };
 function closeModal(){ $("modal").classList.add("hidden"); }
 const TIPO_DET={ingreso:{lbl:"Ingresos",col:"var(--green)",sg:"+"},gasto:{lbl:"Gastos",col:"var(--red)",sg:"-"},ahorro:{lbl:"Ahorros",col:"var(--blue)",sg:"+"}};
@@ -2257,6 +2260,7 @@ async function saveModal(){
   const usarUsd=(mdExtCur==="usd"&&CUR[state.pais].usd);
   const monto=usarUsd?Math.round(raw*rate()*100)/100:Math.abs(raw);
   const esIngresoDeAhorro=(state.tab==="ingreso"&&mdDeAhorro);
+  const esIngresoEnviaAhorro=(state.tab==="ingreso"&&mdEnviaAhorro&&!esIngresoDeAhorro);
   const tipoFinal=esIngresoDeAhorro?"ahorro":state.tab;
   const obj={ tipo:tipoFinal, fecha:$("fFecha").value||today(), quien:$("fQuien").value, categoria:esIngresoDeAhorro?catDefault("ahorro"):$("fCat").value, monto, descripcion:$("fDesc").value.trim(), verificado:mdVerif, externo:(state.tab==="gasto"&&mdExterno), retiro:(tipoFinal==="ahorro"&&(mdRetiro||esIngresoDeAhorro)), montoUsd:usarUsd?Math.abs(raw):null };
   const esNueva=!state.editId;
@@ -2268,8 +2272,11 @@ async function saveModal(){
     t.fijoId=nuevoFijo.id; t.pagado=true;
     await saveCfg();
   }
+  if(esNueva && esIngresoEnviaAhorro){
+    tx.push({ id:uid(), tipo:"ahorro", fecha:t.fecha, quien:t.quien, categoria:catDefault("ahorro"), monto:t.monto, descripcion:(t.descripcion?"De: "+t.descripcion:"Envío de ingreso"), verificado:t.verificado, externo:false, retiro:false, montoUsd:null, deIngresoId:t.id });
+  }
   await saveTx(); closeModal(); renderAll();
-  if(esNueva && state.tab==="ingreso" && !esIngresoDeAhorro){ showAhorroPrompt(t.fecha,t.quien); }
+  if(esNueva && state.tab==="ingreso" && !esIngresoDeAhorro && !esIngresoEnviaAhorro){ showAhorroPrompt(t.fecha,t.quien); }
 }
 function showAhorroPrompt(fecha,quien){
   const old=document.getElementById("ahoPrompt"); if(old) old.remove();
@@ -2316,7 +2323,8 @@ document.querySelectorAll(".fMontoDec").forEach(b=>b.onclick=()=>{
   el.focus();
   try{ el.setSelectionRange(pos+1,pos+1); }catch(e){}
 });
-$("fDeAhorro").onclick=()=>{ mdDeAhorro=!mdDeAhorro; $("fDeAhorro").classList.toggle("on",mdDeAhorro); };
+$("fDeAhorro").onclick=()=>{ mdDeAhorro=!mdDeAhorro; $("fDeAhorro").classList.toggle("on",mdDeAhorro); if(mdDeAhorro){ mdEnviaAhorro=false; $("fEnviaAhorro").classList.remove("on"); } };
+$("fEnviaAhorro").onclick=()=>{ mdEnviaAhorro=!mdEnviaAhorro; $("fEnviaAhorro").classList.toggle("on",mdEnviaAhorro); if(mdEnviaAhorro){ mdDeAhorro=false; $("fDeAhorro").classList.remove("on"); } };
 $("fExtCur").querySelectorAll("button").forEach(b=>b.onclick=()=>{ mdExtCur=b.dataset.c; updateExtCurUI(); });
 $("fMonto").addEventListener("input",()=>{ if(mdExtCur==="usd")updateExtCurUI(); });
 $("fVerif").onclick=()=>{ mdVerif=!mdVerif; $("fVerif").classList.toggle("on",mdVerif); };
