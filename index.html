@@ -526,7 +526,7 @@ function defaultCfg(pais){
     ahorroClaves:["AHORRO","CUENTA DE GASTOS"],
     ahorroRecordados:{},
     merchantCats:DEF_MERCHANT_CATS.slice(),
-    inmuebles:[], fijos:[] };
+    inmuebles:[], fijos:[], recordatorioDias:2 };
 }
 function normFijos(arr){
   if(!Array.isArray(arr)) return [];
@@ -589,7 +589,8 @@ function migrateCfg(pais,raw){
     ahorroRecordados: (raw.ahorroRecordados&&typeof raw.ahorroRecordados==="object")?raw.ahorroRecordados:{},
     merchantCats: (Array.isArray(raw.merchantCats))?raw.merchantCats.map(x=>({k:String((x&&x.k)||"").trim(),c:String((x&&x.c)||"").trim()})).filter(x=>x.k&&x.c):d.merchantCats,
     inmuebles: normInmuebles(raw.inmuebles),
-    fijos: normFijos(raw.fijos)
+    fijos: normFijos(raw.fijos),
+    recordatorioDias: (typeof raw.recordatorioDias==="number"&&raw.recordatorioDias>0)?raw.recordatorioDias:2
   };
 }
 
@@ -620,15 +621,16 @@ async function saveCfg(){ try{ await setDoc(cfgRef,cfg); return true; }catch(e){
 function startSync(){
   if(unsubTx)unsubTx(); if(unsubCfg)unsubCfg();
   if(cfgRetryTimer){ clearTimeout(cfgRetryTimer); cfgRetryTimer=null; }
-  refsFor(state.pais); firstCfg=true; cfgReady=false; cfgRetryDelay=1000; tx=[]; cfg=defaultCfg(state.pais);
+  refsFor(state.pais); firstCfg=true; cfgReady=false; cfgRetryDelay=1000; tx=[]; cfg=defaultCfg(state.pais); reminderShown=false;
   renderAll(); // si el modal de agregar quedó abierto (p.ej. al cambiar de país), refleja "sincronizando"
-  unsubTx=onSnapshot(txRef, s=>{ tx=(s.exists()&&Array.isArray(s.data().items))?s.data().items:[]; renderAll(); }, e=>console.warn(e));
+  unsubTx=onSnapshot(txRef, s=>{ tx=(s.exists()&&Array.isArray(s.data().items))?s.data().items:[]; renderAll(); maybeReminder(); }, e=>console.warn(e));
   unsubCfg=onSnapshot(cfgRef, s=>{
     if(s.exists()){ cfg=migrateCfg(state.pais,s.data()); }
     else { cfg=defaultCfg(state.pais); if(firstCfg) setDoc(cfgRef,cfg).catch(()=>{}); }
     firstCfg=false; cfgReady=true; cfgRetryDelay=1000;
     buildSidebar(); renderAll();
     checkTipoCambioDiario(state.pais);
+    maybeReminder();
   }, e=>{
     console.warn("Config sync:",e);
     // Reintento con backoff: si la primera suscripción falla (red inestable, etc.)
@@ -770,22 +772,39 @@ function fijosCard(mesKey){
   if(!cfg.fijos||!cfg.fijos.length) return "";
   const rows=cfg.fijos.map(f=>{
     const t=tx.find(x=>x.fijoId===f.id && x.fecha && x.fecha.slice(0,7)===mesKey);
-    return { f, pagado: !!(t&&t.tipo==="gasto") };
+    const monto=t?(+t.monto||0):(+f.monto||0);
+    return { f, pagado: !!(t&&t.tipo==="gasto"), monto };
   });
   const pagados=rows.filter(r=>r.pagado).length;
-  const totalMonto=sum(cfg.fijos);
+  const totalMonto=rows.reduce((s,r)=>s+r.monto,0);
   let h=`<div class="card" style="margin-bottom:11px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">
       <span class="t" style="margin:0">Gastos fijos de ${esc(mesRefLabel().toLowerCase())}</span>
       <span style="color:var(--dim);font-size:11px">${pagados}/${rows.length} pagados</span>
     </div>`;
-  h+=rows.map(r=>`<div class="fijorow" data-fijo="${esc(r.f.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06);cursor:pointer">
-      <span style="width:20px;height:20px;border-radius:6px;border:1.5px solid ${r.pagado?'var(--green)':'var(--dim)'};background:${r.pagado?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex:none;font-size:12px;font-weight:800;color:var(--bg)">${r.pagado?'✓':''}</span>
-      <span style="flex:1;color:var(--ink);font-size:13px;font-weight:600">${esc(r.f.nombre)}${r.f.categoria?`<span style="color:var(--dim);font-weight:400"> · ${esc(r.f.categoria)}</span>`:""}</span>
-      <span class="num" style="color:${r.pagado?'var(--soft)':'var(--dim)'};font-size:13px;font-weight:700">${money(r.f.monto)}</span>
+  h+=rows.map(r=>`<div class="fijorow" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)">
+      <span data-fijocheck="${esc(r.f.id)}" style="width:20px;height:20px;border-radius:6px;border:1.5px solid ${r.pagado?'var(--green)':'var(--dim)'};background:${r.pagado?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex:none;font-size:12px;font-weight:800;color:var(--bg);cursor:pointer">${r.pagado?'✓':''}</span>
+      <span data-fijocheck="${esc(r.f.id)}" style="flex:1;color:var(--ink);font-size:13px;font-weight:600;cursor:pointer">${esc(r.f.nombre)}${r.f.categoria?`<span style="color:var(--dim);font-weight:400"> · ${esc(r.f.categoria)}</span>`:""}</span>
+      <span class="num" data-fijoedit="${esc(r.f.id)}" style="color:${r.pagado?'var(--soft)':'var(--dim)'};font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px">${money(r.monto)}</span>
     </div>`).join("");
   h+=`<div style="display:flex;justify-content:space-between;margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.08)"><span style="color:var(--dim);font-size:11px">Total fijos</span><span class="num" style="color:var(--ink);font-size:12px;font-weight:700">${money(totalMonto)}</span></div>`;
   h+=`</div>`; return h;
+}
+async function editFijoMontoMes(fijoId,mesKey){
+  const f=(cfg.fijos||[]).find(x=>x.id===fijoId); if(!f) return;
+  ensureFijosMes(mesKey);
+  const t=tx.find(x=>x.fijoId===fijoId && x.fecha && x.fecha.slice(0,7)===mesKey);
+  if(!t) return;
+  const actual=+t.monto||0;
+  const raw=prompt(`Monto de "${f.nombre}" para ${mesRefLabel()}:`,actual||"");
+  if(raw===null) return;
+  const nuevo=parseMonto(raw);
+  if(!(nuevo>0) || nuevo===actual) return;
+  t.monto=nuevo;
+  await saveTx();
+  const tambien=confirm(`¿Actualizar también el monto general de "${f.nombre}" para los próximos meses?\n\nAceptar = sí, actualizar también.\nCancelar = no, solo cambiar este mes.`);
+  if(tambien){ f.monto=nuevo; await saveCfg(); }
+  renderPanel(); buildSidebar();
 }
 
 function limitesCard(base){
@@ -822,6 +841,24 @@ function endOfPeriod(){
 const sum = arr => arr.reduce((s,t)=>s+(+t.monto||0),0);
 function sumType(list,tipo){ return sum(list.filter(t=>t.tipo===tipo)); }
 function ahorroNeto(list){ return list.filter(t=>t.tipo==="ahorro").reduce((s,t)=>s+(t.retiro?-1:1)*(+t.monto||0),0); }
+/* ---------- recordatorio diario ---------- */
+function diasSinRegistrar(){
+  const hoy=today();
+  const reales=tx.filter(t=>t.tipo!=="fijo" && t.fecha && t.fecha<=hoy);
+  if(!reales.length) return null;
+  let ultima=reales[0].fecha; reales.forEach(t=>{ if(t.fecha>ultima) ultima=t.fecha; });
+  return Math.round((new Date(hoy+"T00:00:00")-new Date(ultima+"T00:00:00"))/86400000);
+}
+let reminderShown=false;
+function maybeReminder(){
+  if(reminderShown || !cfgReady) return;
+  reminderShown=true;
+  const dias=diasSinRegistrar();
+  const umbral=Math.max(1,+cfg.recordatorioDias||2);
+  if(dias!==null && dias>=umbral){
+    setTimeout(()=>showToast(`👋 Llevas ${dias} día${dias===1?"":"s"} sin agregar gastos`,4000),700);
+  }
+}
 let catColorMap={};
 let catLogoMap={};
 function buildColorMap(){
@@ -945,6 +982,7 @@ function renderPanel(){
     </div>`;
   }
   h+=fijosCard(state.mesRef);
+  h+=ahorroAltoCard();
   h+=limitesCard(base);
   h+=`<div style="margin-bottom:11px">`+recientesCard()+`</div>`;
 
@@ -997,7 +1035,8 @@ function renderPanel(){
   if($("ppChips"))$("ppChips").querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{state.persona=b.dataset.p;renderPanel();buildSidebar();});
   wireCurToggle();
   $("viewPanel").querySelectorAll("[data-mv]").forEach(el=>el.onclick=()=>openMov(el.dataset.mv));
-  $("viewPanel").querySelectorAll("[data-fijo]").forEach(el=>el.onclick=async()=>{ await toggleFijoPagado(el.dataset.fijo,state.mesRef); renderPanel(); buildSidebar(); });
+  $("viewPanel").querySelectorAll("[data-fijocheck]").forEach(el=>el.onclick=async()=>{ await toggleFijoPagado(el.dataset.fijocheck,state.mesRef); renderPanel(); buildSidebar(); });
+  $("viewPanel").querySelectorAll("[data-fijoedit]").forEach(el=>el.onclick=async(ev)=>{ ev.stopPropagation(); await editFijoMontoMes(el.dataset.fijoedit,state.mesRef); });
 }
 function usdToggleMobile(){ return CUR[state.pais].usd?`<span class="only-mobile" style="margin-left:auto"><button data-cur="1" class="${state.verUSD?'on':''}">${state.verUSD?"$":CUR[state.pais].sym+" / $"}</button></span>`:""; }
 function perBlock(pfx){
@@ -1007,6 +1046,29 @@ function perBlock(pfx){
 function wireCurToggle(){
   const a=$("curCRC"),b=$("curUSD"); if(a)a.onclick=()=>{state.verUSD=false;renderPanel();buildSidebar();}; if(b)b.onclick=()=>{state.verUSD=true;renderPanel();buildSidebar();};
   const m=document.querySelector("[data-cur]"); if(m)m.onclick=()=>{state.verUSD=!state.verUSD;renderPanel();buildSidebar();};
+}
+function ahorroAltoCard(){
+  const ahorros=tx.filter(t=>t.tipo==="ahorro");
+  if(!ahorros.length) return "";
+  const enviado=ahorros.filter(t=>!t.retiro).reduce((s,t)=>s+(+t.monto||0),0);
+  const retirado=ahorros.filter(t=>t.retiro).reduce((s,t)=>s+(+t.monto||0),0);
+  const saldo=enviado-retirado;
+  const recientes=ahorros.slice().sort((a,b)=>a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(a.id<b.id?1:-1)).slice(0,3);
+  let h=`<div class="card" style="margin-bottom:11px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">
+      <span class="t" style="margin:0">🐷 Ahorro Alto Rendimiento</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:${recientes.length?9:0}px">
+      <div style="flex:1;text-align:center"><div style="color:var(--dim);font-size:10px">Enviado</div><div class="num" style="color:var(--blue);font-size:13.5px;font-weight:800">${money(enviado)}</div></div>
+      <div style="flex:1;text-align:center;border-left:1px solid rgba(255,255,255,.08);border-right:1px solid rgba(255,255,255,.08)"><div style="color:var(--dim);font-size:10px">Retirado</div><div class="num" style="color:var(--amber);font-size:13.5px;font-weight:800">${money(retirado)}</div></div>
+      <div style="flex:1;text-align:center"><div style="color:var(--dim);font-size:10px">Saldo estimado</div><div class="num" style="color:var(--green);font-size:13.5px;font-weight:800">${money(saldo)}</div></div>
+    </div>`;
+  if(recientes.length){
+    h+=`<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:8px">`;
+    h+=recientes.map(t=>`<div class="mv" data-mv="${t.id}" style="padding:4px 0;cursor:pointer"><div class="mid" style="flex:1"><div class="d" style="font-size:12.5px">${t.retiro?"↙ Retiro":"↗ Envío"}${t.descripcion?` · ${esc(t.descripcion)}`:""}</div><div class="s">${fechaLarga(t.fecha).replace(/ \d{4}$/,"")}</div></div><span class="num" style="color:${t.retiro?'var(--amber)':'var(--blue)'};font-weight:700;font-size:12.5px">${t.retiro?"-":"+"}${money(t.monto)}</span></div>`).join("");
+    h+=`</div>`;
+  }
+  h+=`</div>`; return h;
 }
 function metaCard(){
   if(cfg.meta>0){
@@ -1022,6 +1084,8 @@ function metaCard(){
 }
 function atencionCard(noVer,gas){
   const items=[];
+  const diasSR=diasSinRegistrar(), umbralSR=Math.max(1,+cfg.recordatorioDias||2);
+  if(diasSR!==null && diasSR>=umbralSR) items.push([`<span class="dot" style="background:var(--amber)"></span> Llevas ${diasSR} día${diasSR===1?"":"s"} sin agregar gastos`,`<span class="go" data-attadd="1" style="cursor:pointer">Agregar →</span>`]);
   if(noVer) items.push([`<span class="dot" style="background:var(--red)"></span> ${noVer} movimiento${noVer===1?"":"s"} sin verificar`,`<span class="go" data-go="Movimientos">Revisar →</span>`]);
   if(cfg.presupuesto>0){
     const pct=gas/cfg.presupuesto;
@@ -1688,6 +1752,8 @@ function renderSet(){
     </div>
   <div class="row" style="display:flex;gap:8px"><div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Presupuesto mensual</label><input class="field num" id="setPre" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.presupuesto||""}" placeholder="0"></div>
     <div style="flex:1"><label style="color:var(--muted);font-size:11px;margin-left:2px">Meta de ahorro</label><input class="field num" id="setMeta" type="number" inputmode="decimal" step="0.01" min="0" value="${cfg.meta||""}" placeholder="0"></div></div>
+    <label style="color:var(--muted);font-size:11px;margin-left:2px;display:block;margin-top:9px">Avisar si pasan tantos días sin agregar gastos</label>
+    <input class="field num" id="setRecordatorio" type="number" inputmode="numeric" step="1" min="1" value="${cfg.recordatorioDias||2}" placeholder="2" style="max-width:110px">
     <div class="set-add" id="setSaveGen">Guardar general</div></div>`;
 
   h+=setListSection("Categorías de gasto","gastos");
@@ -1761,7 +1827,7 @@ function renderSet(){
     </div></div>`;
 
   $("viewSet").innerHTML=h;
-  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); cfg.tcFuente="manual"; } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.ingresoMensual=Math.max(0,+$("setIngreso").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); await saveCfg(); flashSaved($("setSaveGen")); };
+  $("setSaveGen").onclick=async()=>{ cfg.hogar=$("setHogar").value.trim()||"Nuestro hogar"; if($("setTc")){ const v=Math.max(0.0001,+$("setTc").value||CUR[state.pais].tc); if(v!==cfg.tc){ cfg.tc=v; cfg.tcFecha=today(); cfg.tcFuente="manual"; } } cfg.presupuesto=Math.max(0,+$("setPre").value||0); cfg.ingresoMensual=Math.max(0,+$("setIngreso").value||0); cfg.meta=Math.max(0,+$("setMeta").value||0); cfg.recordatorioDias=Math.max(1,Math.round(+$("setRecordatorio").value||2)); await saveCfg(); flashSaved($("setSaveGen")); };
   if($("setSugerir"))$("setSugerir").onclick=()=>{ const ing=Math.max(0,+$("setIngreso").value||0); if(!ing){ $("setIngreso").focus(); return; } $("setPre").value=Math.round(ing*0.8); showToast("Sugerido: 80% del ingreso (necesidades + gustos, regla 50/30/20)"); };
   if($("setTcNow"))$("setTcNow").onclick=async()=>{ $("setTcNow").textContent="Actualizando…"; const ok=await fetchTipoCambio(); if(!ok){ $("setTcNow").textContent="Actualizar ahora"; alert("No se pudo obtener el tipo de cambio. Revise su conexión."); } };
   if($("setTcAuto"))$("setTcAuto").onclick=async()=>{ cfg.tcAuto=!(cfg.tcAuto!==false); await saveCfg(); renderSet(); };
@@ -1812,14 +1878,14 @@ function wireListSection(key){
   const add=$("viewSet").querySelector(`[data-addk="${key}"]`); if(add)add.onclick=async()=>{ cfg[key].push({n:"Nueva",c:PAL[cfg[key].length%PAL.length],logo:"",limite:0}); await saveCfg(); renderSet(); };
 }
 function flashSaved(el){ const t=el.textContent; el.textContent="Guardado ✓"; setTimeout(()=>el.textContent=t,1200); }
-function showToast(msg){
+function showToast(msg,ms){
   let t=document.getElementById("toastMsg");
   if(!t){ t=document.createElement("div"); t.id="toastMsg";
-    t.style.cssText="position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--card);border:1px solid var(--cardb);color:var(--ink);padding:11px 20px;border-radius:999px;font-size:13px;font-weight:700;z-index:999;opacity:0;transition:opacity .25s;pointer-events:none;box-shadow:0 8px 24px rgba(33,29,51,.14)";
+    t.style.cssText="position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--card);border:1px solid var(--cardb);color:var(--ink);padding:11px 20px;border-radius:999px;font-size:13px;font-weight:700;z-index:999;opacity:0;transition:opacity .25s;pointer-events:none;box-shadow:0 8px 24px rgba(33,29,51,.14);max-width:86vw;text-align:center";
     document.body.appendChild(t);
   }
   t.textContent=msg; t.style.opacity="1";
-  clearTimeout(t._to); t._to=setTimeout(()=>{ t.style.opacity="0"; },1600);
+  clearTimeout(t._to); t._to=setTimeout(()=>{ t.style.opacity="0"; },ms||1600);
 }
 
 /* ============================ MODAL ============================ */
@@ -2235,6 +2301,7 @@ function go(v){ state.view=v; ["Panel","Mov","Res","Set"].forEach(x=>{});
 }
 document.querySelectorAll("#navD a[data-v],#navM a[data-v]").forEach(a=>a.onclick=()=>go(a.dataset.v));
 document.addEventListener("click",e=>{ const g=e.target.closest("[data-go]"); if(g)go(g.dataset.go); });
+document.addEventListener("click",e=>{ const a=e.target.closest("[data-attadd]"); if(a) openAdd(); });
 $("perHd").onclick=()=>{ const l=$("perList"); const open=l.style.display!=="none"; l.style.display=open?"none":"flex"; $("perCi").style.transform=open?"rotate(-90deg)":""; };
 
 /* modal wiring */
