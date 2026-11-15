@@ -565,7 +565,7 @@ function normInmueble(x){
   const hRaw=x.hipoteca&&typeof x.hipoteca==="object"?x.hipoteca:{};
   const hipoteca={ activa:!!hRaw.activa, saldoInicial:Math.max(0,+hRaw.saldoInicial||0), tasaAnual:Math.max(0,+hRaw.tasaAnual||0), cuota:Math.max(0,+hRaw.cuota||0), fechaInicio:typeof hRaw.fechaInicio==="string"?hRaw.fechaInicio:today().slice(0,7), moneda:normMoneda(hRaw.moneda), tc:Math.max(0,+hRaw.tc||0) };
   const rRaw=x.rentaCR&&typeof x.rentaCR==="object"?x.rentaCR:{};
-  const rentaCR={ valor:Math.max(0,+rRaw.valor||0), compra:Math.max(0,+rRaw.compra||0), habit:rRaw.habit!==false, sinIva:!!rRaw.sinIva, moneda:normMoneda(rRaw.moneda) };
+  const rentaCR={ valor:Math.max(0,+rRaw.valor||0), compra:Math.max(0,+rRaw.compra||0), habit:rRaw.habit!==false, sinIva:!!rRaw.sinIva, alquilado:rRaw.alquilado!==false, moneda:normMoneda(rRaw.moneda) };
   return { id:x.id||uid(), nombre:(x.nombre||"Inmueble").toString(), catGastos, meses, recurrentes, hipoteca, rentaCR };
 }
 function normInmuebles(arr){ return Array.isArray(arr)?arr.map(normInmueble):[]; }
@@ -1485,7 +1485,7 @@ function renderInm(){
     <div class="card"><div class="t">Neto</div><div style="font-size:18px;font-weight:800;color:${tNeto>=0?'var(--green)':'var(--red)'}" class="num">${money(tNeto)}</div></div>
   </div>`;
 
-  if(state.pais==="CR") h+=rentaCRCard(key);
+  if(state.pais==="CR") h+=rentaCRCard();
 
   if(!cfg.inmuebles.length){
     h+=`<div class="card empty" style="margin-bottom:14px">🏢<br>Aún no hay inmuebles registrados en ${esc(CUR[state.pais].name)}.<br>Agregue el primero abajo.</div>`;
@@ -1503,133 +1503,159 @@ function renderInm(){
    1) Renta de capital inmobiliario: 15% sobre el 85% del bruto = 12,75% efectivo del alquiler.
    2) Bienes inmuebles (municipal): 0,25% anual del valor de la propiedad / 12.
    3) Condominio / mantenimiento: monto mensual exacto.
-   IVA 13%: alquiler habitacional > 1,5 salarios base (lo paga el inquilino aparte). */
+   IVA 13%: alquiler habitacional > 1,5 salarios base (lo paga el inquilino aparte; nunca se resta). */
 const RC_RENTA=0.15*0.85;   // 0.1275
 const RC_MUNI=0.0025;
-let rc={src:"",srcMes:"",moneda:"local",alquiler:0,condo:0,valor:0,compra:0,habit:true,sinIva:false};
 const r2=v=>Math.round((+v||0)*100)/100;
-function rcFmt(v){
-  if(rc.moneda==="usd") return (v<0?"-":"")+"$"+Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+function fmtMon(v,moneda){
+  if(moneda==="usd") return (v<0?"-":"")+"$"+Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   return moneyFor(state.pais,v);
 }
-function rcCargarDe(inm,key){
-  const m=mesData(inm,key); const tc=rate();
-  rc.moneda=(m.alquiler.moneda==="usd"&&CUR[state.pais].usd)?"usd":"local";
-  const conv=x=>rc.moneda==="usd"?(x.moneda==="usd"?x.monto:montoLocal(x)/tc):montoLocal(x);
-  rc.alquiler=r2(conv(m.alquiler));
-  const ci=inm.catGastos.findIndex(c=>/manten|condomin/i.test(c));
-  rc.condo=ci>=0?r2(conv(m.gastos[ci])):0;
-  const r=inm.rentaCR||{}; const f=(r.moneda||"local")===rc.moneda?1:(rc.moneda==="usd"?1/tc:tc);
-  rc.valor=r2((r.valor||0)*f); rc.compra=r2((r.compra||0)*f); rc.habit=r.habit!==false; rc.sinIva=!!r.sinIva;
-  rc.src=inm.id; rc.srcMes=key;
+function fmtCorto(v,moneda){
+  const sym=moneda==="usd"?"$":CUR[state.pais].sym; const a=Math.abs(v), neg=v<0?"-":"";
+  if(a>=1e6) return neg+sym+(Math.round(a/1e5)/10).toLocaleString("es-CR")+" M";
+  return neg+fmtMon(a,moneda).replace(/[.,]00$/,"");
 }
-function rcCalc(){
-  const bruto=Math.max(0,rc.alquiler), condo=Math.max(0,rc.condo);
-  const renta=bruto*RC_RENTA, muni=Math.max(0,rc.valor)*RC_MUNI/12;
+function rcCompute(d){
+  const bruto=Math.max(0,d.alquiler||0), condo=Math.max(0,d.condo||0);
+  const renta=bruto*RC_RENTA, muni=Math.max(0,d.valor||0)*RC_MUNI/12;
   const neta=bruto-condo-renta-muni, anual=neta*12;
-  const pct=rc.compra>0?anual/rc.compra*100:null;
-  const brutoCRC=rc.moneda==="usd"?bruto*rate():bruto;
-  const tope=1.5*(cfg.salarioBase||462200);
-  return {bruto,condo,renta,muni,neta,anual,pct,brutoCRC,tope};
+  const pct=d.compra>0?anual/d.compra*100:null;
+  const brutoCRC=d.moneda==="usd"?bruto*rate():bruto;
+  return {bruto,condo,renta,muni,neta,anual,pct,brutoCRC,tope:1.5*(cfg.salarioBase||462200),moneda:d.moneda,compra:d.compra||0};
 }
-function rcResultHtml(){
-  const c=rcCalc();
-  if(!c.bruto) return `<div style="color:var(--dim);font-size:12px;padding:10px 2px">Ingrese el alquiler mensual para ver el cálculo.</div>`;
-  const row=(sg,lbl,v,col,bold)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12.5px${bold?";font-weight:800":""}">
-    <span style="color:${bold?'var(--ink)':'var(--soft)'}"><b class="num" style="display:inline-block;width:22px;color:${col}">${sg}</b>${lbl}</span>
-    <span class="num" style="color:${col};white-space:nowrap">${rcFmt(v)}</span></div>`;
-  let h=`<div style="margin-top:12px">`;
+function rcTable(c,o){
+  const F=v=>fmtMon(v,c.moneda);
+  if(!c.bruto) return `<div style="color:var(--dim);font-size:12px;padding:10px 2px">${o&&o.sinAlqMsg?o.sinAlqMsg:"Ingrese el alquiler mensual para ver el cálculo."}</div>`;
+  const row=(sg,lbl,v,col)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12.5px">
+    <span style="color:var(--soft)"><b class="num" style="display:inline-block;width:22px;color:${col}">${sg}</b>${lbl}</span>
+    <span class="num" style="color:${col};white-space:nowrap">${F(v)}</span></div>`;
+  let h=`<div style="margin-top:10px">`;
   h+=row("(+)","Ingreso bruto por alquiler mensual",c.bruto,"var(--green)");
   h+=row("(−)","Cuota de condominio / mantenimiento",c.condo,"var(--red)");
   h+=row("(−)","Impuesto de Renta de Capital (12,75% efectivo)",c.renta,"var(--red)");
   h+=row("(−)","Impuesto Municipal Bienes Inmuebles (mensualizado)",c.muni,"var(--red)");
   h+=`<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0 2px;border-top:2px solid var(--accbd);font-size:13.5px;font-weight:800">
     <span style="color:var(--ink)"><b style="display:inline-block;width:22px;color:var(--accent)">(=)</b>GANANCIA NETA REAL MENSUAL</span>
-    <span class="num" style="color:${c.neta>=0?'var(--green)':'var(--red)'};white-space:nowrap">${rcFmt(c.neta)}</span></div>`;
-  h+=`</div>`;
+    <span class="num" style="color:${c.neta>=0?'var(--green)':'var(--red)'};white-space:nowrap">${F(c.neta)}</span></div></div>`;
   h+=`<div class="grid col-2" style="margin-top:12px;gap:8px">
-    <div class="mc acc"><div class="l">Ganancia neta anual (×12)</div><div class="v num" style="color:${c.anual>=0?'var(--ink)':'var(--red)'}">${rcFmt(c.anual)}</div></div>
-    <div class="mc"><div class="l">Rentabilidad neta anual</div>${c.pct===null?`<div style="color:var(--dim);font-size:11.5px;margin-top:4px">Ingrese el precio de compra para calcularla</div>`:`<div class="v num" style="color:${c.pct>=0?'var(--green)':'var(--red)'}">${c.pct.toLocaleString("es-CR",{minimumFractionDigits:2,maximumFractionDigits:2})}%</div><div class="s">sobre ${rcFmt(rc.compra)}</div>`}</div>
+    <div class="mc acc"><div class="l">Ganancia neta anual (×12)</div><div class="v num" style="color:${c.anual>=0?'var(--ink)':'var(--red)'}">${F(c.anual)}</div></div>
+    <div class="mc"><div class="l">Rentabilidad neta anual</div>${c.pct===null?`<div style="color:var(--dim);font-size:11.5px;margin-top:4px">Ingrese el precio de compra para calcularla</div>`:`<div class="v num" style="color:${c.pct>=0?'var(--green)':'var(--red)'}">${c.pct.toLocaleString("es-CR",{minimumFractionDigits:2,maximumFractionDigits:2})}%</div><div class="s">sobre ${F(c.compra)}</div>`}</div>
   </div>`;
-  const sb=moneyFor("CR",cfg.salarioBase||462200), topeTxt=moneyFor("CR",c.tope);
-  if(rc.sinIva){
-    h+=`<div style="color:var(--dim);font-size:11px;margin-top:9px">Marcado como inmueble que no cobra IVA: no se muestra el aviso. (El IVA nunca se resta de la ganancia.)</div>`;
-  } else if(rc.habit && c.brutoCRC>c.tope){
-    h+=`<div style="display:flex;gap:9px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:10px 12px;margin-top:10px"><span style="color:var(--amber);font-size:16px">⚠</span><span style="color:var(--amber);font-size:12px">Recordatorio: este alquiler habitacional supera 1,5 salarios base (${topeTxt}), así que <b>aplica el 13% de IVA</b> (${rcFmt(c.bruto*0.13)} al mes), que paga el inquilino adicional al alquiler. No se resta de su ganancia.</span></div>`;
-  } else if(!rc.habit){
-    h+=`<div style="display:flex;gap:9px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:10px 12px;margin-top:10px"><span style="color:var(--amber);font-size:16px">⚠</span><span style="color:var(--amber);font-size:12px">Alquiler comercial: aplica el 13% de IVA (${rcFmt(c.bruto*0.13)} al mes), que paga el inquilino adicional al alquiler.</span></div>`;
-  } else {
-    h+=`<div style="color:var(--dim);font-size:11px;margin-top:9px">Habitacional bajo el tope de 1,5 salarios base (${topeTxt}): no aplica IVA.</div>`;
-  }
-  h+=`<div style="color:var(--dim);font-size:10.5px;margin-top:8px">Salario base usado: ${sb} · <span id="rcSBEdit" style="color:var(--accent2);cursor:pointer;font-weight:700">cambiar</span>${rc.moneda==="usd"?` · tipo de cambio ${CUR.CR?CUR.CR.sym:"₡"}${rate()}`:""}</div>`;
+  const topeTxt=moneyFor("CR",c.tope);
+  const aviso=t=>`<div style="display:flex;gap:9px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:10px 12px;margin-top:10px"><span style="color:var(--amber);font-size:16px">⚠</span><span style="color:var(--amber);font-size:12px">${t}</span></div>`;
+  if(o.sinIva) h+=`<div style="color:var(--dim);font-size:11px;margin-top:9px">Marcado como inmueble que no cobra IVA. (El IVA nunca se resta de la ganancia.)</div>`;
+  else if(o.habit && c.brutoCRC>c.tope) h+=aviso(`Recordatorio: este alquiler habitacional supera 1,5 salarios base (${topeTxt}), así que <b>aplica el 13% de IVA</b> (${F(c.bruto*0.13)} al mes), que paga el inquilino adicional al alquiler. No se resta de su ganancia.`);
+  else if(!o.habit) h+=aviso(`Alquiler comercial: aplica el 13% de IVA (${F(c.bruto*0.13)} al mes), que paga el inquilino adicional al alquiler.`);
+  else h+=`<div style="color:var(--dim);font-size:11px;margin-top:9px">Habitacional bajo el tope de 1,5 salarios base (${topeTxt}): no aplica IVA.</div>`;
+  h+=`<div style="color:var(--dim);font-size:10.5px;margin-top:8px">Salario base usado: ${moneyFor("CR",cfg.salarioBase||462200)} · <span class="rcSBEdit" style="color:var(--accent2);cursor:pointer;font-weight:700">cambiar</span>${c.moneda==="usd"?` · tipo de cambio ${CUR[state.pais].sym}${rate()}`:""}</div>`;
   return h;
 }
-function rentaCRCard(key){
-  if(rc.src){
-    const inm=cfg.inmuebles.find(x=>x.id===rc.src);
-    if(!inm){ rc.src=""; rc.srcMes=""; }
-    else if(rc.srcMes!==key) rcCargarDe(inm,key);
+/* --- datos de rentabilidad de un inmueble para un mes (en la moneda de su alquiler) --- */
+function inmCondoIdx(inm){ return inm.catGastos.findIndex(c=>/manten|condomin/i.test(c)); }
+function inmRenta(inm,key){
+  const m=mesData(inm,key); const tc=rate();
+  const moneda=(m.alquiler.moneda==="usd"&&CUR[state.pais].usd)?"usd":"local";
+  const conv=x=>moneda==="usd"?(x.moneda==="usd"?x.monto:montoLocal(x)/tc):montoLocal(x);
+  const ci=inmCondoIdx(inm);
+  const r=inm.rentaCR||{}; const f=(r.moneda||"local")===moneda?1:(moneda==="usd"?1/tc:tc);
+  const d={ moneda, alquiler:r2(conv(m.alquiler)), condo:ci>=0?r2(conv(m.gastos[ci])):0, valor:r2((r.valor||0)*f), compra:r2((r.compra||0)*f) };
+  return { d, c:rcCompute(d), r };
+}
+function inmRentaLinea(inm,key){
+  if(state.pais!=="CR") return "";
+  const r=inm.rentaCR||{};
+  if(r.alquilado===false) return `<div style="color:var(--dim);font-size:11.5px;margin-top:3px">🔑 Desocupado</div>`;
+  const {c}=inmRenta(inm,key);
+  if(!c.bruto) return `<div style="color:var(--amber);font-size:11.5px;margin-top:3px">🏠 Alquilado · falta el alquiler de ${esc(imLabel().toLowerCase())}</div>`;
+  return `<div style="color:${c.neta>=0?'var(--green)':'var(--red)'};font-size:11.5px;font-weight:700;margin-top:3px">💰 Genera ${fmtCorto(c.neta,c.moneda)}/mes · ${fmtCorto(c.anual,c.moneda)}/año${c.pct!==null?` · ${c.pct.toLocaleString("es-CR",{maximumFractionDigits:2})}%`:""}</div>`;
+}
+function inmRentaSeccion(inm,key){
+  if(state.pais!=="CR") return "";
+  const {d,c,r}=inmRenta(inm,key); const alq=r.alquilado!==false;
+  const sym=d.moneda==="usd"?"$":CUR[state.pais].sym;
+  const ci=inmCondoIdx(inm);
+  let h=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin:18px 0 7px">4. Rentabilidad neta (Costa Rica)</div>
+    <div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">
+    <div class="chk ${alq?'on':''}" data-inmrcalq="${inm.id}" style="margin-bottom:${alq?'10px':'0'}"><span class="bx">✓</span><span>🏠 Está alquilado (mostrar lo que genera bajo el nombre)</span></div>`;
+  if(alq){
+    h+=`<div style="color:var(--dim);font-size:11px;margin-bottom:9px">Usa el alquiler de arriba${ci>=0?` y el gasto "${esc(inm.catGastos[ci])}" como condominio`:" (agregue un gasto llamado \"Mantenimiento\" o \"Condominio\" para restarlo)"} de ${esc(imLabel().toLowerCase())}.</div>
+      <div style="display:flex;gap:8px;margin-bottom:9px">
+        <div style="flex:1;min-width:0"><label style="color:var(--muted);font-size:11px;display:block;margin:0 0 4px 2px">Valor de la propiedad (${sym})</label>
+          <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmrc="valor" data-id="${inm.id}" value="${d.valor||""}" placeholder="0"></div>
+        <div style="flex:1;min-width:0"><label style="color:var(--muted);font-size:11px;display:block;margin:0 0 4px 2px">Precio de compra (${sym})</label>
+          <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmrc="compra" data-id="${inm.id}" value="${d.compra||""}" placeholder="Opcional"></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="chk ${r.habit!==false?'on':''}" data-inmrchab="${inm.id}" style="flex:1;min-width:150px;margin-bottom:0"><span class="bx">✓</span><span>Habitacional</span></div>
+        <div class="chk ${r.sinIva?'on':''}" data-inmrciva="${inm.id}" style="flex:1;min-width:150px;margin-bottom:0"><span class="bx">✓</span><span>No cobra IVA</span></div>
+      </div>
+      <div id="rcres-${inm.id}">${rcTable(c,{habit:r.habit!==false,sinIva:!!r.sinIva,sinAlqMsg:"Ponga el alquiler de este mes arriba para ver lo que genera."})}</div>`;
   }
-  const usdPais=CUR[state.pais].usd;
-  const inp=(f,lbl,ph)=>`<div style="flex:1;min-width:0"><label style="color:var(--muted);font-size:11px;display:block;margin:0 0 4px 2px">${lbl}</label>
-    <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-rc="${f}" value="${rc[f]||""}" placeholder="${ph||"0"}"></div>`;
-  let h=`<div class="card" style="margin-bottom:14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
-      <span style="color:var(--ink);font-size:14px;font-weight:800">🧮 Rentabilidad neta · Costa Rica</span>
-      ${usdPais?`<div class="seg" id="rcMon"><button data-c="local" class="${rc.moneda==='local'?'on':''}">${CUR[state.pais].sym}</button><button data-c="usd" class="${rc.moneda==='usd'?'on':''}">$</button></div>`:""}
-    </div>
-    <div style="color:var(--dim);font-size:11px;margin-bottom:11px">Renta de capital 12,75% · Bienes inmuebles 0,25% anual · Condominio</div>
-    <label style="color:var(--muted);font-size:11px;display:block;margin:0 0 4px 2px">Propiedad</label>
-    <select id="rcSrc" class="field" style="margin-bottom:10px">
-      <option value="" ${rc.src?"":"selected"}>Datos nuevos (escribirlos a mano)</option>
-      ${cfg.inmuebles.map(x=>`<option value="${esc(x.id)}" ${x.id===rc.src?"selected":""}>${esc(x.nombre)} · ${esc(imLabel().toLowerCase())}</option>`).join("")}
-    </select>
-    <div style="display:flex;gap:8px;margin-bottom:9px">${inp("alquiler","Alquiler mensual (bruto)")}${inp("condo","Condominio / mantenimiento")}</div>
-    <div style="display:flex;gap:8px;margin-bottom:9px">${inp("valor","Valor de la propiedad")}${inp("compra","Precio de compra","Opcional")}</div>
-    <div class="chk ${rc.habit?'on':''}" id="rcHabit" style="margin-bottom:0"><span class="bx">✓</span><span>Alquiler habitacional (vivienda)</span></div>
-    <div class="chk ${rc.sinIva?'on':''}" id="rcSinIva" style="margin:8px 0 0"><span class="bx">✓</span><span>Este inmueble no cobra IVA</span></div>
-    ${rc.src?`<div style="color:var(--dim);font-size:10.5px;margin-top:7px">Alquiler y condominio se tomaron de ${esc(imLabel().toLowerCase())}. El valor y el precio de compra se guardan en este inmueble.</div>`:""}
-    <div id="rcRes">${rcResultHtml()}</div>
-  </div>`;
-  return h;
+  h+=`</div>`; return h;
 }
-let rcSaveTimer=null;
-function rcGuardarEnInmueble(){
-  if(!rc.src) return;
-  const inm=cfg.inmuebles.find(x=>x.id===rc.src); if(!inm) return;
-  inm.rentaCR={ valor:r2(rc.valor), compra:r2(rc.compra), habit:rc.habit, sinIva:rc.sinIva, moneda:rc.moneda };
-  clearTimeout(rcSaveTimer); rcSaveTimer=setTimeout(()=>saveCfg(),400);
-}
-function rcRefrescar(){ const el=$("rcRes"); if(el){ el.innerHTML=rcResultHtml(); wireRcSB(); } }
-function wireRcSB(){
-  const sb=$("rcSBEdit"); if(!sb) return;
-  sb.onclick=async()=>{
+function wireRcSB(root){
+  (root||$("viewInm")).querySelectorAll(".rcSBEdit").forEach(sb=>sb.onclick=async()=>{
     const raw=prompt("Salario base vigente (Poder Judicial), en colones:",cfg.salarioBase||462200);
     if(raw===null) return; const v=parseMonto(raw); if(!(v>0)) return;
-    cfg.salarioBase=Math.round(v*100)/100; await saveCfg(); rcRefrescar();
-  };
+    cfg.salarioBase=Math.round(v*100)/100; await saveCfg(); renderInm();
+  });
 }
+/* --- calculadora suelta para una propiedad que no está registrada --- */
+let rc={open:false,moneda:"local",alquiler:0,condo:0,valor:0,compra:0,habit:true,sinIva:false};
+function rentaCRCard(){
+  const usdPais=CUR[state.pais].usd;
+  let h=`<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+    <div id="rcHead" style="display:flex;justify-content:space-between;align-items:center;padding:12px 13px;cursor:pointer">
+      <span style="color:var(--ink);font-size:13.5px;font-weight:700">🧮 Calcular una propiedad nueva</span>
+      <span style="color:var(--dim);font-size:12px;display:inline-block;transform:${rc.open?'rotate(180deg)':'none'}">▾</span></div>`;
+  if(rc.open){
+    const inp=(f,lbl,ph)=>`<div style="flex:1;min-width:0"><label style="color:var(--muted);font-size:11px;display:block;margin:0 0 4px 2px">${lbl}</label>
+      <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-rc="${f}" value="${rc[f]||""}" placeholder="${ph||"0"}"></div>`;
+    h+=`<div style="padding:2px 13px 14px;border-top:1px solid rgba(255,255,255,.06)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0">
+        <span style="color:var(--dim);font-size:11px">Para evaluar antes de comprar o alquilar</span>
+        ${usdPais?`<div class="seg" id="rcMon"><button data-c="local" class="${rc.moneda==='local'?'on':''}">${CUR[state.pais].sym}</button><button data-c="usd" class="${rc.moneda==='usd'?'on':''}">$</button></div>`:""}
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:9px">${inp("alquiler","Alquiler mensual (bruto)")}${inp("condo","Condominio / mantenimiento")}</div>
+      <div style="display:flex;gap:8px;margin-bottom:9px">${inp("valor","Valor de la propiedad")}${inp("compra","Precio de compra","Opcional")}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="chk ${rc.habit?'on':''}" id="rcHabit" style="flex:1;min-width:150px;margin-bottom:0"><span class="bx">✓</span><span>Habitacional</span></div>
+        <div class="chk ${rc.sinIva?'on':''}" id="rcSinIva" style="flex:1;min-width:150px;margin-bottom:0"><span class="bx">✓</span><span>No cobra IVA</span></div>
+      </div>
+      <div id="rcRes">${rcTable(rcCompute(rc),rc)}</div></div>`;
+  }
+  return h+`</div>`;
+}
+function rcRefrescar(){ const el=$("rcRes"); if(el){ el.innerHTML=rcTable(rcCompute(rc),rc); wireRcSB(el); } }
 function wireRentaCR(){
-  if(!$("rcRes")) return;
-  if($("rcSrc")) $("rcSrc").onchange=()=>{
-    const id=$("rcSrc").value;
-    if(!id){ rc={src:"",srcMes:"",moneda:rc.moneda,alquiler:0,condo:0,valor:0,compra:0,habit:true,sinIva:false}; }
-    else { const inm=cfg.inmuebles.find(x=>x.id===id); if(inm) rcCargarDe(inm,state.inmMes); }
-    renderInm();
-  };
+  const v=$("viewInm"); if(!v) return;
+  if($("rcHead")) $("rcHead").onclick=()=>{ rc.open=!rc.open; renderInm(); };
   if($("rcMon")) $("rcMon").querySelectorAll("button").forEach(b=>b.onclick=()=>{
     const nueva=b.dataset.c; if(nueva===rc.moneda) return;
     const f=nueva==="usd"?1/rate():rate();
     ["alquiler","condo","valor","compra"].forEach(k=>rc[k]=r2(rc[k]*f));
-    rc.moneda=nueva; rcGuardarEnInmueble(); renderInm();
+    rc.moneda=nueva; renderInm();
   });
-  $("viewInm").querySelectorAll("[data-rc]").forEach(inp=>{
-    inp.oninput=()=>{ rc[inp.dataset.rc]=Math.max(0,+inp.value||0); rcRefrescar(); };
-    inp.onchange=()=>{ if(inp.dataset.rc==="valor"||inp.dataset.rc==="compra") rcGuardarEnInmueble(); };
+  v.querySelectorAll("[data-rc]").forEach(inp=>inp.oninput=()=>{ rc[inp.dataset.rc]=Math.max(0,+inp.value||0); rcRefrescar(); });
+  if($("rcHabit")) $("rcHabit").onclick=()=>{ rc.habit=!rc.habit; $("rcHabit").classList.toggle("on",rc.habit); rcRefrescar(); };
+  if($("rcSinIva")) $("rcSinIva").onclick=()=>{ rc.sinIva=!rc.sinIva; $("rcSinIva").classList.toggle("on",rc.sinIva); rcRefrescar(); };
+  // sección por inmueble
+  const getInm=id=>cfg.inmuebles.find(x=>x.id===id);
+  const ensure=inm=>{ if(!inm.rentaCR) inm.rentaCR={valor:0,compra:0,habit:true,sinIva:false,alquilado:true,moneda:"local"}; return inm.rentaCR; };
+  v.querySelectorAll("[data-inmrc]").forEach(inp=>{
+    const upd=()=>{ const inm=getInm(inp.dataset.id); if(!inm) return null; const r=ensure(inm); const {d}=inmRenta(inm,state.inmMes);
+      // pasa ambos campos a la moneda del alquiler y guarda el que se editó
+      r.valor=d.valor; r.compra=d.compra; r.moneda=d.moneda; r[inp.dataset.inmrc]=Math.max(0,+inp.value||0); return inm; };
+    inp.oninput=()=>{ const inm=upd(); if(!inm) return; const {c}=inmRenta(inm,state.inmMes); const el=$("rcres-"+inm.id); if(el){ el.innerHTML=rcTable(c,{habit:inm.rentaCR.habit!==false,sinIva:!!inm.rentaCR.sinIva,sinAlqMsg:"Ponga el alquiler de este mes arriba para ver lo que genera."}); wireRcSB(el); } };
+    inp.onchange=async()=>{ if(upd()){ await saveCfg(); renderInm(); } };
   });
-  if($("rcHabit")) $("rcHabit").onclick=()=>{ rc.habit=!rc.habit; $("rcHabit").classList.toggle("on",rc.habit); rcGuardarEnInmueble(); rcRefrescar(); };
-  if($("rcSinIva")) $("rcSinIva").onclick=()=>{ rc.sinIva=!rc.sinIva; $("rcSinIva").classList.toggle("on",rc.sinIva); rcGuardarEnInmueble(); rcRefrescar(); };
-  wireRcSB();
+  const tog=(attr,campo,defTrue)=>v.querySelectorAll(`[data-${attr}]`).forEach(el=>el.onclick=async()=>{
+    const inm=getInm(el.dataset[attr.replace(/-([a-z])/g,(_,x)=>x.toUpperCase())]); if(!inm) return; const r=ensure(inm);
+    r[campo]=defTrue?(r[campo]===false):!r[campo]; await saveCfg(); renderInm();
+  });
+  tog("inmrcalq","alquilado",true); tog("inmrchab","habit",true); tog("inmrciva","sinIva",false);
+  wireRcSB(v);
 }
 
 function monedaSeg(kind,id,i,moneda){
@@ -1656,6 +1682,7 @@ function inmCardHtml(inm,key){
     <div style="min-width:0">
       <div style="color:var(--ink);font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inm.nombre)}</div>
       <div style="color:var(--dim);font-size:11px;margin-top:2px">Alquiler ${money(alqLocal)} · Gastos ${money(gTot)}${hipEst?` · Hipoteca ${money(hipCuota)}`:""}</div>
+      ${inmRentaLinea(inm,key)}
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex:none">
       <span class="num" style="font-weight:800;font-size:14px;color:${neto>=0?'var(--green)':'var(--red)'}">${money(neto)}</span>
@@ -1765,8 +1792,9 @@ function inmCardHtml(inm,key){
       h+=`</div>`;
     }
 
+    h+=inmRentaSeccion(inm,key);
     h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
-      <span style="color:var(--muted);font-size:12px">Neto de ${esc(imLabel().toLowerCase())}</span>
+      <span style="color:var(--muted);font-size:12px">Flujo de caja de ${esc(imLabel().toLowerCase())}</span>
       <span class="num" style="font-weight:800;font-size:15px;color:${neto>=0?'var(--green)':'var(--red)'}">${money(neto)}</span>
     </div>`;
     h+=`<button data-inmsave="${inm.id}" style="width:100%;background:var(--accent2);color:var(--acc-ink);font-weight:700;border-radius:12px;padding:13px;font-size:15px;margin-top:16px">Guardar</button>`;
@@ -1785,7 +1813,7 @@ function wireInm(key){
 
   if($("addInm"))$("addInm").onclick=async()=>{
     const inm={ id:uid(), nombre:"Nuevo inmueble", catGastos:DEFGI.slice(), meses:{}, recurrentes:DEFGI.map(()=>null), hipoteca:{activa:false,saldoInicial:0,tasaAnual:0,cuota:0,fechaInicio:today().slice(0,7),moneda:"local",tc:0} };
-    inm.rentaCR={valor:0,compra:0,habit:true,sinIva:false,moneda:"local"};
+    inm.rentaCR={valor:0,compra:0,habit:true,sinIva:false,alquilado:true,moneda:"local"};
     cfg.inmuebles.push(inm); state.inmOpen=inm.id; await saveCfg(); renderInm();
   };
   wireRentaCR();
