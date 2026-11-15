@@ -1600,11 +1600,14 @@ function inmRentaSeccion(inm,key){
   const {d,c,r}=inmRenta(inm,key); const alq=r.alquilado!==false;
   const sym=d.moneda==="usd"?"$":CUR[state.pais].sym;
   const ci=inmCondoIdx(inm);
-  let h=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin:18px 0 7px">4. Rentabilidad neta (Costa Rica)</div>
+  let h=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin:18px 0 7px">4. ¿Cuánto le genera? (Costa Rica)</div>
     <div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">
     <div class="chk ${alq?'on':''}" data-inmrcalq="${inm.id}" style="margin-bottom:${alq?'10px':'0'}"><span class="bx">✓</span><span>🏠 Está alquilado (mostrar lo que genera bajo el nombre)</span></div>`;
   if(alq){
-    h+=`<div style="color:var(--dim);font-size:11px;margin-bottom:9px">Usa el alquiler de arriba${ci>=0?` y el gasto "${esc(inm.catGastos[ci])}" como condominio`:" (agregue un gasto llamado \"Mantenimiento\" o \"Condominio\" para restarlo)"} de ${esc(imLabel().toLowerCase())}.</div>
+    h+=`<div style="color:var(--dim);font-size:11px;margin-bottom:9px;line-height:1.45">Se calcula solo con el alquiler de arriba${ci>=0?` y el gasto "${esc(inm.catGastos[ci])}" (condominio)`:` (para restar el condominio, tenga un gasto llamado "Mantenimiento")`}, restando la renta a Hacienda (12,75%) y el impuesto municipal. Solo necesita estos 2 datos, <b>una sola vez</b>:</div>
+      <div style="background:rgba(255,255,255,.04);border-radius:9px;padding:8px 10px;margin-bottom:10px;color:var(--soft);font-size:11px;line-height:1.5">
+        • <b>Valor de la propiedad:</b> el valor registrado en la Municipalidad (sale en el recibo de bienes inmuebles). Se usa para el 0,25% anual.<br>
+        • <b>Precio de compra:</b> lo que usted pagó por el inmueble. Se usa para el % de rentabilidad. Si no lo sabe, déjelo vacío.</div>
       <div style="display:flex;gap:8px;margin-bottom:9px">
         <div style="flex:1;min-width:0"><label style="color:var(--muted);font-size:11px;display:block;margin:0 0 4px 2px">Valor de la propiedad (${sym})</label>
           <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmrc="valor" data-id="${inm.id}" value="${d.valor||""}" placeholder="0"></div>
@@ -1720,7 +1723,7 @@ function inmCardHtml(inm,key){
     h+=`<label style="color:var(--muted);font-size:11px;margin:12px 0 4px 2px;display:block">Nombre del inmueble</label>`;
     h+=`<input class="field" data-inmnombre="${inm.id}" value="${esc(inm.nombre)}" style="margin-bottom:14px">`;
 
-    h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">1. Ingreso — Alquiler mensual</div>`;
+    h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">1. Alquiler que cobró este mes</div><div style="color:var(--dim);font-size:11px;margin:-3px 0 7px 1px">Lo que le paga el inquilino en ${esc(imLabel().toLowerCase())}. Elija ₡ o $ según como cobra.</div>`;
     h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:10px;margin-bottom:16px">`;
     if(usdPais) h+=`<div style="margin-bottom:8px">${monedaSeg("inmalqmon",inm.id,null,m.alquiler.moneda)}</div>`;
     h+=`<input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmalq="${inm.id}" value="${m.alquiler.monto||""}" placeholder="0">`;
@@ -1729,31 +1732,7 @@ function inmCardHtml(inm,key){
       h+=`<div style="color:var(--dim);font-size:11px;margin-top:6px">≈ ${money(alqLocal)} · tipo de cambio ${CUR[state.pais].sym}${tcUsado} usado ese mes</div>`;
     }
     h+=`</div>`;
-    {
-      const st=inmCalcState[inm.id]||(inmCalcState[inm.id]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
-      if(st.cat>=inm.catGastos.length) st.cat=0;
-      const FREQL={mensual:"Mensual",trimestral:"Trimestral",semestral:"Semestral",anual:"Anual"};
-      h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">
-        <div style="color:var(--muted);font-size:11px;margin-bottom:8px">Calculadora rápida de gasto</div>
-        <div style="display:flex;gap:6px;margin-bottom:8px">
-          <button data-inmmodo="${inm.id}" data-modo="pct" class="pkquick" style="${st.modo==='pct'?'background:rgba(96,165,250,.18);color:var(--blue)':''}">% del alquiler</button>
-          <button data-inmmodo="${inm.id}" data-modo="fijo" class="pkquick" style="${st.modo==='fijo'?'background:rgba(96,165,250,.18);color:var(--blue)':''}">Monto fijo</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:9px">
-          <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmcalcval="${inm.id}" value="${st.valor}" placeholder="${st.modo==='pct'?'13':'0'}" style="flex:1">
-          <select data-inmcalccat="${inm.id}" style="flex:1.5;min-width:0;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:0 6px">
-            ${inm.catGastos.map((c,i)=>`<option value="${i}" ${i===st.cat?"selected":""}>${esc(c)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="chk ${st.rec?'on':''}" data-inmrecchk="${inm.id}" style="margin-bottom:${st.rec?'8px':'10px'}"><span class="bx">✓</span><span>🔁 Repetir automáticamente</span></div>
-        ${st.rec?`<select data-inmrecfreq="${inm.id}" style="width:100%;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:8px;margin-bottom:9px">
-          ${Object.keys(FREQL).map(f=>`<option value="${f}" ${f===st.freq?"selected":""}>${FREQL[f]}</option>`).join("")}
-        </select>`:""}
-        <button data-inmcalcgo="${inm.id}" style="width:100%;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.4);color:var(--blue);font-weight:700;border-radius:10px;padding:9px;font-size:12.5px">Poner en gasto${st.rec?" y repetir":""}</button>
-      </div>`;
-    }
-
-    h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos</div>`;
+    h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin-bottom:7px">2. Gastos que pagó este mes</div><div style="color:var(--dim);font-size:11px;margin:-3px 0 7px 1px">Escriba el monto en cada uno (deje en blanco los que no pagó este mes). Puede renombrarlos, borrarlos con ✕ o agregar otros.</div>`;
     const FREQL2={mensual:"Mensual",trimestral:"Trimestral",semestral:"Semestral",anual:"Anual"};
     h+=inm.catGastos.map((cat,i)=>{
       const g=m.gastos[i];
@@ -1778,10 +1757,38 @@ function inmCardHtml(inm,key){
       return row;
     }).join("");
     h+=`<div class="set-add" data-inmaddcat="${inm.id}">+ Agregar gasto</div>`;
+    {
+      const st=inmCalcState[inm.id]||(inmCalcState[inm.id]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
+      if(st.cat>=inm.catGastos.length) st.cat=0;
+      const FREQL={mensual:"Mensual",trimestral:"Trimestral",semestral:"Semestral",anual:"Anual"};
+      if(!st.open){ h+=`<div data-inmatajo="${inm.id}" style="color:var(--dim);font-size:11.5px;margin:2px 2px 16px;cursor:pointer">⚡ Atajo opcional: llenar un gasto como % del alquiler o que se repita solo <span style="color:var(--accent2);font-weight:700">abrir</span></div>`; }
+      else {
+      h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin:4px 0 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="color:var(--ink);font-size:12px;font-weight:700">⚡ Atajo para llenar un gasto</span><span data-inmatajo="${inm.id}" style="color:var(--dim);font-size:11px;cursor:pointer">cerrar ✕</span></div>
+        <div style="color:var(--dim);font-size:11px;margin-bottom:9px">Ej.: la administración cobra 10% del alquiler → elija "% del alquiler", ponga 10, elija el gasto y toque el botón. Con "Repetir" se llena solo los próximos meses.</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button data-inmmodo="${inm.id}" data-modo="pct" class="pkquick" style="${st.modo==='pct'?'background:rgba(96,165,250,.18);color:var(--blue)':''}">% del alquiler</button>
+          <button data-inmmodo="${inm.id}" data-modo="fijo" class="pkquick" style="${st.modo==='fijo'?'background:rgba(96,165,250,.18);color:var(--blue)':''}">Monto fijo</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:9px">
+          <input class="field num" type="number" inputmode="decimal" step="0.01" min="0" data-inmcalcval="${inm.id}" value="${st.valor}" placeholder="${st.modo==='pct'?'13':'0'}" style="flex:1">
+          <select data-inmcalccat="${inm.id}" style="flex:1.5;min-width:0;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:0 6px">
+            ${inm.catGastos.map((c,i)=>`<option value="${i}" ${i===st.cat?"selected":""}>${esc(c)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="chk ${st.rec?'on':''}" data-inmrecchk="${inm.id}" style="margin-bottom:${st.rec?'8px':'10px'}"><span class="bx">✓</span><span>🔁 Repetir automáticamente</span></div>
+        ${st.rec?`<select data-inmrecfreq="${inm.id}" style="width:100%;background:var(--card2);border:1px solid var(--cardb);border-radius:8px;color:var(--ink);font-size:12.5px;padding:8px;margin-bottom:9px">
+          ${Object.keys(FREQL).map(f=>`<option value="${f}" ${f===st.freq?"selected":""}>${FREQL[f]}</option>`).join("")}
+        </select>`:""}
+        <button data-inmcalcgo="${inm.id}" style="width:100%;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.4);color:var(--blue);font-weight:700;border-radius:10px;padding:9px;font-size:12.5px">Poner en gasto${st.rec?" y repetir":""}</button>
+      </div>`;
+      }
+    }
+
 
     {
       const hip=inm.hipoteca||{activa:false,saldoInicial:0,tasaAnual:0,cuota:0,fechaInicio:today().slice(0,7)};
-      h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin:18px 0 7px">3. Hipoteca</div>`;
+      h+=`<div style="color:var(--soft);font-size:12.5px;font-weight:700;margin:18px 0 7px">3. Hipoteca (si tiene)</div>`;
       h+=`<div style="background:var(--card2);border:1px solid var(--cardb);border-radius:11px;padding:11px;margin-bottom:16px">`;
       h+=`<div class="chk ${hip.activa?'on':''}" data-inmhipchk="${inm.id}" style="margin-bottom:${hip.activa?'10px':'0'}"><span class="bx">✓</span><span>🏦 Este inmueble tiene hipoteca</span></div>`;
       if(hip.activa){
@@ -1902,6 +1909,10 @@ function wireInm(key){
     inm.catGastos.push("Nuevo gasto"); if(Array.isArray(inm.recurrentes)) inm.recurrentes.push(null); await saveCfg(); renderInm();
   });
 
+  v.querySelectorAll("[data-inmatajo]").forEach(el=>el.onclick=()=>{
+    const st=inmCalcState[el.dataset.inmatajo]||(inmCalcState[el.dataset.inmatajo]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
+    st.open=!st.open; renderInm();
+  });
   v.querySelectorAll("[data-inmmodo]").forEach(b=>b.onclick=()=>{
     const st=inmCalcState[b.dataset.inmmodo]||(inmCalcState[b.dataset.inmmodo]={modo:"pct",valor:13,cat:0,rec:false,freq:"trimestral"});
     st.modo=b.dataset.modo; if(st.modo==="fijo"&&st.valor===13) st.valor=0; renderInm();
